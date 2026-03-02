@@ -1,0 +1,224 @@
+[workspace_paths]
+curly_succotash = "/Users/jim/work/curly-succotash"
+moneyfan = "/Users/jim/work/moneyfan"
+freqtrade = "/Users/jim/work/freqtrade"
+trikeshed = "/Users/jim/work/trikeshed"
+
+[binance_vision]
+base_url = "https://data.binance.vision/data/spot/monthly/klines"
+storage_mode = "permanent"
+cache_dir_permanent = "/Users/jim/work/moneyfan/data/binance/archive_cache"
+duckdb_path_permanent = "/Users/jim/work/moneyfan/data/binance/hrm_data.duckdb"
+tmp_root = "/tmp"
+tmp_prefix = "curly-binance"
+start_month = "2026-01"
+symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT"]
+timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"]
+
+[training_contract]
+world_model_targets = ["raw_agent_signals", "indicator_kernels"]
+hrm_swimlanes = 24
+market_scope = "coinbase_advanced_spot_all_pairs"
+map_reduce_groups = true
+countercoin_routing = "dykstra"
+countercoin_graph_objective = "slime_mold_sparse_surface_distance"
+countercoin_bull_occupancy_policy = "bulls_anchor_countercoins"
+leaf_coin_energy_pull_policy = "unilateral_draw_to_energy_events"
+countercoin_trailing_bull_policy = "strategic_trade_cost_discount"
+routing_trade_cost_discount_enabled = true
+routing_trade_cost_discount_mode = "emergent_policy_head"
+routing_trade_cost_discount_emergent = true
+routing_trade_cost_discount_bps_floor = 0.0
+routing_trade_cost_discount_bps_cap = 12.0
+latent_transform = "hyperbolic"
+universal_trade_wind_tunnel = true
+axiom_driven_generalization = true
+candle_depth_required = true
+horizon_compression = "hyperbolic_timeseries"
+volatility_time_unit_invariance = true
+
+[swimlane_contract]
+lane_count = 24
+required_archetypes = ["grid", "volatile_breakout"]
+fallback_archetype = "momentum"
+growth_base = 2
+square_power = 2
+cube_power = 3
+min_effective_width = 24
+output_json_paths = [
+  "/Users/jim/work/curly-succotash/coordination/runtime/hrm_swimlanes.json",
+  "/Users/jim/work/moneyfan/runtime/hrm_swimlanes.json",
+  "/Users/jim/work/freqtrade/user_data/hrm_swimlanes.json"
+]
+output_dsel_paths = [
+  "/Users/jim/work/curly-succotash/coordination/runtime/hrm_swimlanes.dsel",
+  "/Users/jim/work/trikeshed/runtime/hrm_swimlanes.dsel"
+]
+
+[[swimlane_contract.layout]]
+archetype = "grid"
+count = 4
+risk_tier = "protective"
+weight = 1.0
+fast = 8.0
+slow = 34.0
+sig = 5.0
+sharp = 0.80
+
+[[swimlane_contract.layout]]
+archetype = "volatile_breakout"
+count = 4
+risk_tier = "normal"
+weight = 1.05
+fast = 6.0
+slow = 24.0
+sig = 4.0
+sharp = 1.40
+
+[[swimlane_contract.layout]]
+archetype = "trend"
+count = 4
+risk_tier = "normal"
+weight = 1.0
+fast = 12.0
+slow = 26.0
+sig = 9.0
+sharp = 1.00
+
+[[swimlane_contract.layout]]
+archetype = "mean_reversion"
+count = 4
+risk_tier = "caution"
+weight = 0.95
+fast = 14.0
+slow = 30.0
+sig = 10.0
+sharp = 0.90
+
+[[swimlane_contract.layout]]
+archetype = "momentum"
+count = 4
+risk_tier = "normal"
+weight = 1.0
+fast = 10.0
+slow = 22.0
+sig = 7.0
+sharp = 1.15
+
+[[swimlane_contract.layout]]
+archetype = "liquidity_rotation"
+count = 4
+risk_tier = "caution"
+weight = 0.92
+fast = 16.0
+slow = 36.0
+sig = 12.0
+sharp = 0.85
+
+[connectome]
+timeframe = "5m"
+min_rows_per_symbol = 512
+max_symbols = 0
+anchors = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+output_json_path = "/Users/jim/work/curly-succotash/coordination/runtime/binance_connectome_universe.json"
+output_symbols_path = "/Users/jim/work/curly-succotash/coordination/runtime/binance_connectome_symbols.txt"
+# Optional external feeder; coordinator scanner still works without this.
+script_command = "bash /Users/jim/work/mp-superproject/mp/bin/allcachedpairs.sh"
+script_cwd = "/Users/jim/work/mp-superproject/mp/bin"
+
+[harness]
+output_path = "/Users/jim/work/curly-succotash/coordination/runtime/hrm_training_harness.json"
+output_shell_path = "/Users/jim/work/curly-succotash/coordination/runtime/run_hrm_harness.sh"
+output_codex_path = "/Users/jim/work/curly-succotash/coordination/runtime/hrm_training_codex.md"
+swimlane_dsel_path = "/Users/jim/work/curly-succotash/coordination/runtime/hrm_swimlanes.dsel"
+
+[[harness.stages]]
+name = "convergence_4x4"
+pair_width = 4
+codec_outputs = 4
+effective_width = 4
+max_training_seconds = 1800
+episodes = 100000
+bar_sequences_per_episode = 64
+min_bar_window = 64
+max_bar_window = 192
+candles_per_extent = 1000
+
+[[harness.stages]]
+name = "hrm_24x24"
+pair_width = 24
+codec_outputs = 24
+effective_width = 24
+max_training_seconds = 3600
+episodes = 100000
+bar_sequences_per_episode = 100
+min_bar_window = 64
+max_bar_window = 256
+candles_per_extent = 1500
+
+[[harness.stages]]
+name = "hrm_24x64"
+pair_width = 64
+codec_outputs = 24
+effective_width = 64
+max_training_seconds = 7200
+episodes = 100000
+bar_sequences_per_episode = 120
+min_bar_window = 64
+max_bar_window = 256
+candles_per_extent = 2000
+
+[[harness.stages]]
+name = "hrm_24x512"
+pair_width = 512
+codec_outputs = 24
+effective_width = 512
+max_training_seconds = 21600
+episodes = 100000
+bar_sequences_per_episode = 160
+min_bar_window = 64
+max_bar_window = 256
+candles_per_extent = 2500
+
+[risk_profiles]
+strategy_profiles_path = "/Users/jim/work/curly-succotash/coordination/strategy_profiles.toml"
+output_paths = [
+  "/Users/jim/work/moneyfan/runtime/strategy_risk_profiles.json",
+  "/Users/jim/work/freqtrade/user_data/strategy_risk_profiles.json",
+  "/Users/jim/work/curly-succotash/coordination/runtime/strategy_risk_profiles.json"
+]
+
+[[tasks.today]]
+name = "trikeshed_release_shared"
+cwd = "/Users/jim/work/trikeshed"
+command = "./gradlew linkReleaseSharedMacos"
+background = false
+timeout_seconds = 3600
+
+[[tasks.today]]
+name = "freqtrade_duckdb_preflight"
+cwd = "/Users/jim/work/freqtrade"
+command = "./scripts/failfast_duckdb_static_rg.sh preflight"
+background = false
+timeout_seconds = 900
+
+[[tasks.today]]
+name = "moneyfan_trainerd"
+cwd = "/Users/jim/work/moneyfan"
+command = "python3 trainerd.py --port 8080"
+background = true
+requires_python = true
+
+[[tasks.today]]
+name = "moneyfan_hrm_pretrain_3h"
+cwd = "/Users/jim/work/moneyfan"
+command = "python3 train.py --pretrain-only --timer-based --max-training-seconds 10800 --episodes 100000 --pair-width 24 --min-pair-width 24 --max-pair-width 24 --codec-outputs 24 --pair-universe-file /Users/jim/work/curly-succotash/coordination/runtime/binance_connectome_symbols.txt --candle-source duckdb_sequences_import --duckdb-corpus-path /Users/jim/work/moneyfan/data/binance/hrm_data.duckdb --bar-sequences-per-episode 100 --min-bar-window 64 --max-bar-window 256 --candles-per-extent 2000 --ob-decay-mode hyperbolic --ob-hyperbolic-tau 24 --learning-rate 1e-4"
+background = true
+requires_python = true
+
+[[tasks.today]]
+name = "curly_backend_api"
+cwd = "/Users/jim/work/curly-succotash/backend/src"
+command = "uvicorn main:app --host 0.0.0.0 --port 8000"
+background = true
+requires_python = true

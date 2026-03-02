@@ -6,7 +6,7 @@ Main coordinator for all simulator components.
 import logging
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Any, Callable
 from enum import Enum
 
@@ -101,7 +101,7 @@ class CoinbaseTradingSimulator:
         
         self.state.mode = SimulatorMode.LIVE_PAPER
         self.state.running = True
-        self.state.started_at = datetime.utcnow()
+        self.state.started_at = datetime.now(timezone.utc)
         
         self.paper_engine.initialize_strategies(
             self.config.symbols,

@@ -6,7 +6,7 @@ Handles historical candle backfills and live polling updates.
 import logging
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Any, Callable
 from collections import defaultdict
 from enum import Enum
@@ -195,7 +195,7 @@ class DataIngestionService:
                             await self._emit_candle(candle)
                     
                     key = f"{symbol}_{timeframe.value}"
-                    self._last_poll[key] = datetime.utcnow()
+                    self._last_poll[key] = datetime.now(timezone.utc)
                     
                 except Exception as e:
                     logger.error(f"[INGESTION] Poll failed for {symbol}: {e}")
@@ -283,10 +283,11 @@ class USDValuationService:
     
     def _get_cached_price(self, symbol: str) -> float:
         """Get price with caching."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         if symbol in self._price_cache:
-            cache_age = now - self._cache_time.get(symbol, datetime.min)
+            min_utc = datetime.min.replace(tzinfo=timezone.utc)
+            cache_age = now - self._cache_time.get(symbol, min_utc)
             if cache_age < self._cache_ttl:
                 return self._price_cache[symbol]
         
@@ -310,7 +311,7 @@ class USDValuationService:
             "amount": amount,
             "price_usd": price,
             "usd_value": usd_value,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     
     def get_portfolio_usd_value(
@@ -329,5 +330,5 @@ class USDValuationService:
         return {
             "holdings": valuations,
             "total_usd_value": total_usd,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }

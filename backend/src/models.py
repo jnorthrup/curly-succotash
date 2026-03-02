@@ -4,7 +4,7 @@ All data structures for candles, signals, positions, and metrics.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, List, Dict, Any
 import json
@@ -69,7 +69,7 @@ class Candle:
     @classmethod
     def from_coinbase(cls, data: Dict, symbol: str, timeframe: Timeframe) -> "Candle":
         return cls(
-            timestamp=datetime.utcfromtimestamp(int(data["start"])),
+            timestamp=datetime.fromtimestamp(int(data["start"]), timezone.utc),
             open=float(data["open"]),
             high=float(data["high"]),
             low=float(data["low"]),

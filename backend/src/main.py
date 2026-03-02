@@ -9,7 +9,7 @@ SAFETY: This API provides READ-ONLY access to market data.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 
@@ -128,7 +128,7 @@ def home():
         "version": "1.0.0",
         "safety_notice": "⚠️ PAPER TRADING ONLY - NO LIVE ORDERS ARE PLACED",
         "status": "operational",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -168,7 +168,7 @@ async def start_simulator(background_tasks: BackgroundTasks):
     return {
         "status": "starting",
         "message": "Simulator starting in live paper trading mode",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -181,7 +181,7 @@ async def stop_simulator():
     return {
         "status": "stopped",
         "message": "Simulator stopped",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -203,7 +203,7 @@ async def configure_simulator(config: SimulatorConfigRequest):
     return {
         "status": "configured",
         "config": sim_config.to_dict(),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -238,7 +238,7 @@ def get_signals(limit: int = Query(default=50, ge=1, le=500)):
     return {
         "count": limit,
         "signals": simulator.get_recent_signals(limit),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -250,7 +250,7 @@ def get_positions():
     return {
         "count": len(positions),
         "positions": positions,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -278,7 +278,7 @@ def run_backtest(request: BacktestRequest):
         },
         "results_count": len(results),
         "results": [r.to_dict() for r in results[:24]],
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -291,7 +291,7 @@ def get_backtest_results():
     return {
         "count": len(results),
         "results": [r.to_dict() for r in results],
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -316,7 +316,7 @@ def get_candles(
         "timeframe": timeframe,
         "count": len(candles),
         "candles": [c.to_dict() for c in candles],
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -329,7 +329,7 @@ def get_price(symbol: str):
     return {
         "symbol": symbol,
         "price_usd": valuation["price_usd"],
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -355,7 +355,7 @@ def verify_safety():
         "safety_verified": results["all_passed"],
         "checks": results,
         "message": "✓ READ-ONLY mode confirmed" if results["all_passed"] else "⚠️ Safety check failed",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -369,7 +369,7 @@ async def websocket_signals(websocket: WebSocket):
             "type": "connected",
             "channel": "signals",
             "message": "Connected to signal stream",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         
         while True:
@@ -398,7 +398,7 @@ async def websocket_bullpen(websocket: WebSocket):
             "type": "connected",
             "channel": "bullpen",
             "message": "Connected to bullpen stream",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         
         simulator = get_simulator()
@@ -433,7 +433,7 @@ def get_consensus(
         "symbol": symbol,
         "timeframe": timeframe,
         "consensus": [c.to_dict() for c in consensus],
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -456,5 +456,5 @@ def get_top_strategies(
         "count": len(top),
         "metric": metric,
         "strategies": top,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }

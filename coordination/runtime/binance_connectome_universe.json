@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-03-02T12:57:33",
+  "source": "duckdb",
+  "timeframe": "5m",
+  "duckdb_path": "/Users/jim/work/moneyfan/data/binance/hrm_data.duckdb",
+  "min_rows_per_symbol": 512,
+  "max_symbols": 256,
+  "anchors": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT"
+  ],
+  "script_command": "bash /Users/jim/work/mp-superproject/mp/bin/allcachedpairs.sh",
+  "script_symbol_count": 0,
+  "duckdb_symbol_count": 7,
+  "selected_symbol_count": 7,
+  "selected_symbols": [
+    "ADAUSDT",
+    "BNBUSDT",
+    "BTCUSDT",
+    "DOGEUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT"
+  ],
+  "rows_by_symbol": {
+    "ADAUSDT": 16992,
+    "BNBUSDT": 16992,
+    "BTCUSDT": 16992,
+    "DOGEUSDT": 16992,
+    "ETHUSDT": 16992,
+    "SOLUSDT": 16992,
+    "XRPUSDT": 16992
+  }
+}

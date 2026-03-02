@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-sqlalchemy
+duckdb
 python-dotenv
 pydantic
 pydantic-settings
@@ -13,3 +13,4 @@ python-jose[cryptography]
 python-multipart
 cryptography
 requests
+coinbase-advanced-py

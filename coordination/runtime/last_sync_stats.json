@@ -1,0 +1,15 @@
+{
+  "start_month": "2026-01",
+  "end_month": "2026-03",
+  "storage_mode": "permanent",
+  "storage_root": "/Users/jim/work/moneyfan/data/binance",
+  "cache_dir": "/Users/jim/work/moneyfan/data/binance/archive_cache",
+  "duckdb_path": "/Users/jim/work/moneyfan/data/binance/hrm_data.duckdb",
+  "archives_checked": 126,
+  "archives_downloaded": 0,
+  "archives_ingested": 0,
+  "archives_skipped_cached": 84,
+  "archives_missing": 42,
+  "rows_total_seen": 0,
+  "rows_inserted": 0
+}

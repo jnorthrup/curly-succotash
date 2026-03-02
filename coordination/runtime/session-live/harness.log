@@ -1,0 +1,20 @@
+[HARNESS] Stage convergence_4x4
+[SWIMLANE] wrote json /Users/jim/work/curly-succotash/coordination/runtime/hrm_swimlanes.json
+[SWIMLANE] wrote json /Users/jim/work/moneyfan/runtime/hrm_swimlanes.json
+[SWIMLANE] wrote json /Users/jim/work/freqtrade/user_data/hrm_swimlanes.json
+[SWIMLANE] wrote dsel /Users/jim/work/curly-succotash/coordination/runtime/hrm_swimlanes.dsel
+[SWIMLANE] wrote dsel /Users/jim/work/trikeshed/runtime/hrm_swimlanes.dsel
+
+[SWIMLANE] Summary
+{
+  "lane_count": 24,
+  "json_outputs": 3,
+  "dsel_outputs": 2,
+  "effective_width": 64,
+  "growth_steps": 1,
+  "growth_factor": 64,
+  "required_archetypes": [
+    "grid",
+    "volatile_breakout"
+  ]
+}

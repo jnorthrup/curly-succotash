@@ -6,7 +6,7 @@ SAFETY: This client ONLY accesses public market/candle data endpoints.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Any
 import requests
 from .models import Candle, Timeframe
@@ -113,7 +113,7 @@ class CoinbaseMarketDataClient:
             candles = []
             for c in raw_candles[:limit]:
                 candle = Candle(
-                    timestamp=datetime.utcfromtimestamp(c[0]),
+                    timestamp=datetime.fromtimestamp(c[0], timezone.utc),
                     low=float(c[1]),
                     high=float(c[2]),
                     open=float(c[3]),
@@ -143,7 +143,7 @@ class CoinbaseMarketDataClient:
         Coinbase limits to 300 candles per request, so we paginate.
         """
         all_candles: List[Candle] = []
-        end = datetime.utcnow()
+        end = datetime.now(timezone.utc)
         start = end - timedelta(days=days_back)
         
         granularity_seconds = Timeframe.to_seconds(timeframe)

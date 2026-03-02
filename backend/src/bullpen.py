@@ -5,7 +5,7 @@ Real-time aggregated view of all strategies with rankings and consensus signals.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 from collections import defaultdict
 from enum import Enum
@@ -61,7 +61,7 @@ class BullpenAggregator:
         consensus_signals = self._calculate_consensus(entries)
         summary = self._build_summary(entries)
         
-        self._last_update = datetime.utcnow()
+        self._last_update = datetime.now(timezone.utc)
         
         return {
             "timestamp": self._last_update.isoformat(),
@@ -215,7 +215,7 @@ class BullpenAggregator:
             consensus_signal = ConsensusSignal(
                 symbol=symbol,
                 timeframe=timeframe,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 long_count=long_count,
                 short_count=short_count,
                 flat_count=flat_count,
@@ -281,7 +281,7 @@ class BullpenAggregator:
             "symbol": symbol,
             "timeframe": timeframe.value,
             "state": state,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     
     def get_consensus_for_symbol(
@@ -313,7 +313,7 @@ class BullpenAggregator:
         view = self.get_bullpen_view()
         
         return {
-            "snapshot_timestamp": datetime.utcnow().isoformat(),
+            "snapshot_timestamp": datetime.now(timezone.utc).isoformat(),
             "bullpen": view,
             "all_positions": self.paper_engine.get_positions(),
             "recent_signals": self.paper_engine.get_recent_signals(100),

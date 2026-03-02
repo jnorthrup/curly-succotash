@@ -4,29 +4,24 @@ Tests for safety enforcement, reproducibility, and functionality.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from models import Candle, Signal, SignalType, Timeframe
-from coinbase_client import CoinbaseMarketDataClient, SafetyEnforcement
-from strategies import (
+from backend.src.models import Candle, Signal, SignalType, Timeframe
+from backend.src.coinbase_client import CoinbaseMarketDataClient, SafetyEnforcement
+from backend.src.strategies import (
     create_all_strategies, MACrossoverStrategy, RSIMeanReversionStrategy,
     StrategyConfig, STRATEGY_REGISTRY
 )
-from paper_trading import PaperTradingEngine, PaperTradingConfig
-from backtesting import BacktestEngine, BacktestConfig, MetricsCalculator
-from bullpen import BullpenAggregator, RankingMetric
+from backend.src.paper_trading import PaperTradingEngine, PaperTradingConfig
+from backend.src.backtesting import BacktestEngine, BacktestConfig, MetricsCalculator
+from backend.src.bullpen import BullpenAggregator, RankingMetric
 
 
 def generate_test_candles(count: int = 300, symbol: str = "BTC-USD") -> List[Candle]:
     """Generate synthetic candle data for testing."""
     candles = []
     base_price = 50000.0
-    base_time = datetime.utcnow() - timedelta(hours=count)
+    base_time = datetime.now(timezone.utc) - timedelta(hours=count)
     
     for i in range(count):
         change = (i % 20 - 10) * 50
@@ -344,7 +339,7 @@ class TestDataIngestion:
     
     def test_candle_buffer(self):
         """Test candle buffer deduplication."""
-        from data_ingestion import CandleBuffer
+        from backend.src.data_ingestion import CandleBuffer
         
         buffer = CandleBuffer(max_size=100)
         candles = generate_test_candles(50)
@@ -357,7 +352,7 @@ class TestDataIngestion:
     
     def test_candle_buffer_retrieval(self):
         """Test candle retrieval from buffer."""
-        from data_ingestion import CandleBuffer
+        from backend.src.data_ingestion import CandleBuffer
         
         buffer = CandleBuffer()
         candles = generate_test_candles(100)
@@ -374,8 +369,8 @@ class TestRealTimeSignals:
     
     def test_signal_emission(self):
         """Test signals are emitted correctly."""
-        from paper_trading import SignalEmitter
-        from models import Signal, SignalType, Timeframe
+        from backend.src.paper_trading import SignalEmitter
+        from backend.src.models import Signal, SignalType, Timeframe
         
         emitter = SignalEmitter()
         received_signals = []
@@ -383,7 +378,7 @@ class TestRealTimeSignals:
         emitter.subscribe(lambda s: received_signals.append(s))
         
         signal = Signal(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             symbol="BTC-USD",
             timeframe=Timeframe.ONE_HOUR,
             strategy_name="Test",
