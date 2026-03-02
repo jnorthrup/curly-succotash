@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coinbase Trading Simulator</title>
+    <script data-design-ignore="true">
+(function() {
+  if (window === window.parent || window.__DESIGN_NAV_REPORTER__) return;
+  window.__DESIGN_NAV_REPORTER__ = true;
+  function report() {
+    try { window.parent.postMessage({ type: 'IFRAME_URL_CHANGE', payload: { url: location.origin + location.pathname + location.hash } }, '*'); } catch(e) {}
+  }
+  report();
+  var ps = history.pushState, rs = history.replaceState;
+  history.pushState = function() { ps.apply(this, arguments); report(); };
+  history.replaceState = function() { rs.apply(this, arguments); report(); };
+  window.addEventListener('popstate', report);
+  window.addEventListener('hashchange', report);
+  window.addEventListener('load', report);
+})();
+</script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
