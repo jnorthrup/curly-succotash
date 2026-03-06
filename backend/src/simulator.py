@@ -22,6 +22,12 @@ from .scoreboard import ScoreboardGenerator
 from .hrm_promotion import HRMPromotionLadder, create_promotion_ladder
 from .veto_regression_watch import VetoReason, VetoRegressionWatch, create_veto_watch
 from .daily_runbook import DailyRunbookGenerator, create_runbook_generator
+from .calibration_governor import CalibrationGovernor, CalibrationTrigger
+from .calibration_support import (
+    ThresholdScheduler, CooldownManager, DriftMonitor,
+    RegimeThresholdConfig, CooldownConfig
+)
+from .confidence_calibration import ConfidenceCalibrator
 from .strategies import STRATEGY_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -89,6 +95,14 @@ class CoinbaseTradingSimulator:
         self.promotion_ladder: Optional[HRMPromotionLadder] = None
         self.veto_watch: Optional[VetoRegressionWatch] = None
         self.runbook_generator: Optional[DailyRunbookGenerator] = None
+
+        # Calibration and support components
+        self.calibration_governor = CalibrationGovernor()
+        self.threshold_scheduler = ThresholdScheduler([])
+        self.cooldown_manager = CooldownManager([])
+        self.drift_monitor = DriftMonitor()
+        self.confidence_calibrator = ConfidenceCalibrator()
+
         self._seen_trade_counts: Dict[str, int] = {}
         self._pending_vetoes: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -140,6 +154,41 @@ class CoinbaseTradingSimulator:
 
         logger.info("[SAFETY] ✓ All safety checks passed - READ-ONLY mode confirmed")
 
+    def _detect_regime(self, candle: Candle) -> str:
+        """Detect current market regime for a candle. (Placeholder)"""
+        # In a real implementation, this would use indicators or a model.
+        # For now, we'll return VOL_NORMAL as a default.
+        return "VOL_NORMAL"
+
+    def _monitor_drift(self, candle: Candle, shadow_signal: Any) -> None:
+        """Monitor for calibration drift in HRM predictions."""
+        if not self.drift_monitor or not hasattr(shadow_signal, "hrm_confidence"):
+            return
+
+        # We need a distribution of recent confidences to detect drift.
+        # For now, we'll just log the confidence.
+        # In a real implementation, we'd collect a window of confidences.
+        pass
+
+    def _check_recalibration(self, candle: Candle) -> None:
+        """Check if recalibration is needed based on governor triggers."""
+        if not self.calibration_governor:
+            return
+
+        # Check for triggers
+        decision = self.calibration_governor.should_recalibrate(
+            current_time=candle.timestamp,
+            performance_drop=False, # Placeholder
+            drift_detected=False,   # Placeholder
+            force_recalibrate=False
+        )
+
+        from .calibration_governor import CalibrationTrigger
+        if decision.decision == CalibrationTrigger.SCHEDULED:
+            logger.info(f"[CALIBRATION] Recalibration triggered: {decision.reason}")
+            # In a real implementation, this would trigger a background task
+            # to run the calibration sweep and update models.
+
     async def start_live_paper_mode(self):
         """Start live paper trading mode with real-time candles."""
         if self.state.running:
@@ -165,19 +214,61 @@ class CoinbaseTradingSimulator:
     async def _on_new_candle(self, candle: Candle):
         """Handle new candle from ingestion service."""
         try:
-            if self.killswitch and not self.killswitch.is_trading_allowed():
+            # 1. Detect current regime
+            regime = self._detect_regime(candle)
+            
+            # 2. Get adjusted thresholds for the regime
+            thresholds = self.threshold_scheduler.get_thresholds([regime])
+            
+            # 3. Check for cooldown or kill-switch
+            if self.cooldown_manager.is_in_cooldown(candle.symbol, candle.timestamp):
+                logger.debug(f"[SIMULATOR] {candle.symbol} in cooldown, skipping signals")
+                self.paper_engine.update_open_positions(candle)
+                signals = []
+            elif self.killswitch and not self.killswitch.is_trading_allowed():
                 logger.warning("[SIMULATOR] Trading halted by kill-switch")
                 self.paper_engine.update_open_positions(candle)
                 signals = []
             else:
+                # 4. Process candle through paper engine
                 signals = await self.paper_engine.process_candle(candle)
+                
+                # 5. Filter signals based on regime-aware thresholds
+                signals = [s for s in signals if s.confidence >= thresholds.confidence_threshold]
+
             baseline_signal = self._baseline_signal_for_candle(candle, signals)
 
             if self.shadow_engine:
+                # 6. Apply confidence calibration if possible
+                if self.confidence_calibrator._fitted:
+                    # In a real implementation, we'd calibrate the HRM prediction here.
+                    # For now, we'll just process as normal.
+                    pass
+
                 shadow_signal = self.shadow_engine.process_candle(candle, baseline_signal)
+                
+                # 7. Monitor for calibration drift
+                self._monitor_drift(candle, shadow_signal)
+                
+                # 8. Check if recalibration is needed
+                self._check_recalibration(candle)
+                
                 self._record_shadow_signal(candle, baseline_signal, shadow_signal)
 
-            self._record_closed_trades(self._collect_new_closed_trades())
+            # 9. Record closed trades to cooldown manager
+            new_closed_trades = self._collect_new_closed_trades()
+            for trade in new_closed_trades:
+                # Compute entry time from holding period
+                entry_time = trade.timestamp - timedelta(seconds=trade.holding_period_seconds)
+                self.cooldown_manager.record_trade(
+                    symbol=trade.symbol,
+                    entry_time=entry_time,
+                    exit_time=trade.timestamp,
+                    pnl=trade.pnl,
+                    pnl_percent=trade.pnl_percent
+                )
+            
+            self._record_closed_trades(new_closed_trades)
 
             self.state.candles_processed += 1
             self.state.signals_generated += len(signals)

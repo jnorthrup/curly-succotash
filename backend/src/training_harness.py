@@ -56,6 +56,8 @@ from .adversarial_agents import (
 from .strategies import BaseStrategy, create_all_strategies, StrategyConfig, STRATEGY_REGISTRY
 from .backtesting import MetricsCalculator, BacktestConfig
 from .paper_trading import PaperTradingEngine, PaperTradingConfig
+from .oos_calibration import OOSplitPolicy, OOSplitter, SplitResult
+from .calibration_sweep import CalibrationSweepConfig, CalibrationSweeper, SweepResult
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +86,9 @@ class TrainingConfig:
         adversarial_intensity: Base intensity for adversarial agents (0.0-1.0)
         randomize_episodes: Whether to randomize episode parameters
         track_leaderboard: Whether to maintain strategy leaderboard
+        enable_calibration_sweep: Whether to run calibration sensitivity sweep
+        calibration_sweep_config: Configuration for calibration sweep
+        oos_split_policy: Policy for out-of-sample data splitting
     """
     num_episodes: int = 10000
     max_training_seconds: int = 3600
@@ -104,6 +109,9 @@ class TrainingConfig:
     adversarial_intensity: float = 0.5
     randomize_episodes: bool = True
     track_leaderboard: bool = True
+    enable_calibration_sweep: bool = False
+    calibration_sweep_config: Optional[CalibrationSweepConfig] = None
+    oos_split_policy: Optional[OOSplitPolicy] = None
 
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -316,6 +324,12 @@ class TrainingHarness:
         self._replay_engine: Optional[ReplayEngine] = None
         self._adversarial_orchestrator: Optional[AdversarialOrchestrator] = None
         self._paper_engine: Optional[PaperTradingEngine] = None
+
+        # Calibration and splitting components
+        self._calibration_sweeper = CalibrationSweeper()
+        self._oos_splitter = OOSplitter(self.config.oos_split_policy or OOSplitPolicy())
+        self._last_sweep_result: Optional[SweepResult] = None
+        self._last_split_result: Optional[SplitResult] = None
 
         # Metrics
         self._metrics_calculator = MetricsCalculator()
@@ -612,6 +626,10 @@ class TrainingHarness:
             symbol, timeframe, episode_start, episode_end
         )
 
+        # Handle OOS splitting and calibration sweep if enabled
+        if self.config.oos_split_policy or self.config.enable_calibration_sweep:
+            self._handle_episode_calibration(symbol, timeframe, episode_start, episode_end, seed)
+
         end_time = datetime.now(timezone.utc)
         duration = (end_time - start_time).total_seconds()
 
@@ -658,17 +676,7 @@ class TrainingHarness:
         start_time: datetime,
         end_time: datetime
     ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
-        """Process candles for a single episode.
-
-        Args:
-            symbol: Trading pair symbol
-            timeframe: Candle timeframe
-            start_time: Episode start time
-            end_time: Episode end time
-
-        Returns:
-            Tuple of (strategy_results, adversarial_stats)
-        """
+        """Process candles for a single episode."""
         # Query candles for this episode
         candles = self.client.query_candles(symbol, timeframe, start_time, end_time)
 
@@ -693,6 +701,129 @@ class TrainingHarness:
             adversarial_stats = self._adversarial_orchestrator.get_all_stats()
 
         return strategy_results, adversarial_stats
+
+    def _handle_episode_calibration(
+        self,
+        symbol: str,
+        timeframe: Timeframe,
+        start_time: datetime,
+        end_time: datetime,
+        seed: int
+    ) -> None:
+        """Handle OOS splitting and calibration sweep for an episode."""
+        # Query all candles in the window
+        candles = self.client.query_candles(symbol, timeframe, start_time, end_time)
+        if not candles:
+            return
+
+        # Get regime labels for the candles
+        regime_labels = self._get_regime_labels(candles)
+
+        # Perform OOS splitting if policy is provided
+        if self.config.oos_split_policy:
+            try:
+                self._last_split_result = self._oos_splitter.create_splits(candles, regime_labels)
+                logger.info(f"[HARNESS] Created OOS splits for episode: "
+                           f"train={self._last_split_result.train.n_samples}, "
+                           f"cal={self._last_split_result.calibration.n_samples}, "
+                           f"test={self._last_split_result.test.n_samples}")
+            except Exception as e:
+                logger.warning(f"[HARNESS] OOS splitting failed for episode: {e}")
+
+        # Perform calibration sweep if enabled
+        if self.config.enable_calibration_sweep:
+            sweep_config = self.config.calibration_sweep_config or CalibrationSweepConfig(
+                symbols=[symbol],
+                timeframes=[timeframe],
+                random_seed=seed,
+            )
+
+            # Use the calibration set from OOS split if available, otherwise use all candles
+            cal_candles = candles
+            if self._last_split_result:
+                cal_candles = self._last_split_result.calibration.data
+
+            # Prepare synthetic data for sweep (using actual prices for realistic sweep)
+            # In a real HRM scenario, this would use model predictions and confidences
+            synthetic_data = self._prepare_sweep_data(cal_candles)
+
+            try:
+                self._last_sweep_result = self._calibration_sweeper.run_sweep(sweep_config, synthetic_data)
+                logger.info(f"[HARNESS] Calibration sweep completed for episode. Best ECE: {self._last_sweep_result.best_metrics.expected_calibration_error:.4f}")
+            except Exception as e:
+                logger.warning(f"[HARNESS] Calibration sweep failed for episode: {e}")
+
+    def _get_regime_labels(self, candles: List[Candle]) -> List[str]:
+        """Get volatility-based regime labels for candles."""
+        if not candles:
+            return []
+
+        # Simple volatility-based regime classification
+        closes = np.array([c.close for c in candles])
+        returns = np.diff(closes) / closes[:-1]
+        
+        # Calculate rolling volatility
+        window = min(20, len(returns))
+        if window < 2:
+            return ["VOL_NORMAL"] * len(candles)
+            
+        vol = np.zeros(len(returns))
+        for i in range(window, len(returns) + 1):
+            vol[i-1] = np.std(returns[i-window:i])
+            
+        # Pad beginning
+        vol[:window-1] = vol[window-1]
+        
+        # Classify by volatility percentiles
+        low_thresh = np.percentile(vol, 25)
+        high_thresh = np.percentile(vol, 75)
+        extreme_thresh = np.percentile(vol, 95)
+        
+        labels = []
+        for v in vol:
+            if v >= extreme_thresh:
+                labels.append("VOL_EXTREME")
+            elif v >= high_thresh:
+                labels.append("VOL_HIGH")
+            elif v >= low_thresh:
+                labels.append("VOL_NORMAL")
+            else:
+                labels.append("VOL_LOW")
+                
+        # Pad last label to match candle count
+        labels.append(labels[-1])
+        
+        return labels
+
+    def _prepare_sweep_data(self, candles: List[Candle]) -> Dict[str, Any]:
+        """Prepare data for calibration sweep from actual candles."""
+        # This is a mock implementation since we don't have a real HRM model yet.
+        # It generates "predictions" and "confidences" correlated with actual future returns.
+        n = len(candles)
+        if n < 2:
+            return {"predictions": [], "confidences": [], "actuals": []}
+
+        closes = np.array([c.close for c in candles])
+        future_returns = np.zeros(n)
+        future_returns[:-1] = (closes[1:] - closes[:-1]) / closes[:-1]
+
+        # "Predictions" are correlated with future returns
+        noise_level = 0.5
+        predictions = future_returns + np.random.normal(0, noise_level * np.std(future_returns), n)
+        
+        # "Confidences" are absolute magnitude of predictions (scaled to 0-1)
+        confidences = np.abs(predictions)
+        if np.max(confidences) > 0:
+            confidences = confidences / np.max(confidences)
+        
+        # "Actuals" are 1 if future return > 0, else 0
+        actuals = (future_returns > 0).astype(float)
+
+        return {
+            "predictions": predictions.tolist(),
+            "confidences": confidences.tolist(),
+            "actuals": actuals.tolist(),
+        }
 
     def _calculate_rewards(
         self,
