@@ -5,6 +5,7 @@ This coordinator links:
 - `/Users/jim/work/freqtrade`
 - `/Users/jim/work/trikeshed`
 - `/Users/jim/work/curly-succotash`
+- `/Users/jim/work/ANE`
 
 ## Core Contract
 

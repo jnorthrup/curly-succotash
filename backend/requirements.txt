@@ -1,6 +1,7 @@
 fastapi
 uvicorn
-duckdb
+duckdb>=0.9.0
+numpy>=1.24.0
 python-dotenv
 pydantic
 pydantic-settings

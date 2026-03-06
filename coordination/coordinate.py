@@ -30,7 +30,10 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - compatibility for Python < 3.11
+    import tomli as tomllib
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -72,6 +75,104 @@ def sha256_file(path: Path) -> str:
 
 def sql_quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def build_stage_display_name(
+    name: str,
+    pair_width_target: int,
+    resolved_pair_width: int,
+    effective_width: int,
+) -> str:
+    if resolved_pair_width < pair_width_target:
+        return (
+            f"{name} (capped at {resolved_pair_width}/{pair_width_target} pairs, "
+            f"effective width {effective_width})"
+        )
+    return f"{name} ({resolved_pair_width} pairs, effective width {effective_width})"
+
+
+def build_stage_notes(pair_width_target: int, resolved_pair_width: int) -> List[str]:
+    notes: List[str] = []
+    if resolved_pair_width < pair_width_target:
+        notes.append(
+            "pair width capped by current pair universe size; do not interpret this as a full-width stage"
+        )
+    return notes
+
+
+def build_operating_posture() -> Dict[str, Any]:
+    return {
+        "baseline_trading": {
+            "status": "active_now",
+            "mode": "deterministic_paper",
+            "rule": "Do not wait on HRM milestones to start capturing paper-trading opportunities.",
+        },
+        "hrm_role": {
+            "current": "shadow",
+            "rule": "HRM gathers evidence in shadow mode until it earns authority.",
+            "promotion_ramp": ["shadow", "veto_only", "size_capped", "primary"],
+            "promotion_requirements": [
+                "synthetic convergence on cheap tasks such as sine and feature+1",
+                "market forecasting beats naive baselines on walk-forward data",
+                "cost-aware paper validation remains positive through the promotion gate",
+            ],
+        },
+    }
+
+
+def build_hrm_readiness_contract() -> Dict[str, Any]:
+    return {
+        "failure_states": [
+            {
+                "name": "FAIL_ARCH",
+                "meaning": "cheap synthetic competence does not converge; architecture or implementation is suspect",
+            },
+            {
+                "name": "FAIL_SCALE",
+                "meaning": "task is learnable but current width, depth, or optimizer budget is mis-scaled",
+            },
+            {
+                "name": "FAIL_TRANSFER",
+                "meaning": "synthetic competence does not beat naive baselines on market forecasting tasks",
+            },
+            {
+                "name": "FAIL_TRADING",
+                "meaning": "forecasting competence does not survive cost-aware paper trading",
+            },
+        ],
+        "synthetic_milestones": [
+            {
+                "name": "M0_identity",
+                "tasks": ["x_to_x", "scalar_1x1_to_16x16", "ane_scalar_parity"],
+                "expected_outcome": "near_zero",
+            },
+            {
+                "name": "M1_sine",
+                "tasks": ["single_sine", "mixed_sine", "noisy_sine", "piecewise_sine"],
+                "expected_outcome": "near_zero_or_better_than_baseline",
+            },
+            {
+                "name": "M2_feature_plus_1",
+                "tasks": ["feature_plus_1"],
+                "expected_outcome": "beats_persistence_and_ema",
+            },
+            {
+                "name": "M3_feature_plus_n",
+                "tasks": ["feature_plus_1_2_4_8"],
+                "expected_outcome": "graceful_multi_horizon_degradation",
+            },
+        ],
+        "market_gates": [
+            {
+                "name": "M4_walk_forward",
+                "expected_outcome": "beats_naive_forecasting_baselines",
+            },
+            {
+                "name": "M5_paper_promotion",
+                "expected_outcome": "positive_cost_aware_shadow_edge",
+            },
+        ],
+    }
 
 
 @dataclass
@@ -1298,6 +1399,8 @@ class WorkspaceCoordinator:
             ]
 
         moneyfan = self.workspace_paths.get("moneyfan", Path("/missing/moneyfan"))
+        operating_posture = build_operating_posture()
+        readiness_contract = build_hrm_readiness_contract()
         stages_out: List[Dict[str, Any]] = []
         shell_lines = [
             "#!/usr/bin/env bash",
@@ -1320,11 +1423,21 @@ class WorkspaceCoordinator:
             candles_per_extent = max(int(stage.get("candles_per_extent", 2000)), max_bar_window)
 
             resolved_pair_width = min(pair_width_target, len(symbols))
+            display_name = build_stage_display_name(
+                name=name,
+                pair_width_target=pair_width_target,
+                resolved_pair_width=resolved_pair_width,
+                effective_width=effective_width,
+            )
+            stage_notes = build_stage_notes(
+                pair_width_target=pair_width_target,
+                resolved_pair_width=resolved_pair_width,
+            )
             publish_width_cmd = (
                 f"python3 coordination/coordinate.py publish-swimlanes --min-effective-width {effective_width}"
             )
             train_cmd = (
-                "python3 train.py "
+                "python3 museum/train.py "
                 "--pretrain-only --timer-based "
                 f"--max-training-seconds {max_training_seconds} "
                 f"--episodes {episodes} "
@@ -1346,6 +1459,7 @@ class WorkspaceCoordinator:
             stages_out.append(
                 {
                     "name": name,
+                    "display_name": display_name,
                     "pair_width_target": pair_width_target,
                     "pair_width_resolved": resolved_pair_width,
                     "codec_outputs": codec_outputs,
@@ -1353,11 +1467,14 @@ class WorkspaceCoordinator:
                     "max_training_seconds": max_training_seconds,
                     "episodes": episodes,
                     "bar_sequences_per_episode": bar_sequences,
+                    "stage_notes": stage_notes,
                     "publish_swimlane_width_command": publish_width_cmd,
                     "train_command": train_cmd,
                 }
             )
-            shell_lines.append(f"echo \"[HARNESS] Stage {name}\"")
+            shell_lines.append(f"echo \"[HARNESS] Stage {display_name}\"")
+            for note in stage_notes:
+                shell_lines.append(f"echo \"[HARNESS][NOTE] {note}\"")
             shell_lines.append(f"cd {shlex.quote(str(self.workspace_paths.get('curly_succotash', SCRIPT_DIR.parent)))}")
             shell_lines.append(publish_width_cmd)
             shell_lines.append(f"cd {shlex.quote(str(moneyfan))}")
@@ -1370,6 +1487,8 @@ class WorkspaceCoordinator:
             "pair_universe_path": str(symbols_path),
             "pair_universe_count": len(symbols),
             "swimlane_dsel_path": str(swimlane_dsel),
+            "operating_posture": operating_posture,
+            "readiness_contract": readiness_contract,
             "stages": stages_out,
         }
 
@@ -1381,13 +1500,48 @@ class WorkspaceCoordinator:
             f"- pair_universe_path: {payload['pair_universe_path']}",
             f"- pair_universe_count: {payload['pair_universe_count']}",
             "",
+            "## Operating Posture",
+            "",
+            f"- baseline_trading_status: {operating_posture['baseline_trading']['status']}",
+            f"- baseline_trading_mode: {operating_posture['baseline_trading']['mode']}",
+            f"- baseline_rule: {operating_posture['baseline_trading']['rule']}",
+            f"- hrm_current_role: {operating_posture['hrm_role']['current']}",
+            f"- hrm_role_rule: {operating_posture['hrm_role']['rule']}",
+            "",
+            "### HRM Promotion Ramp",
+            *(f"- {phase}" for phase in operating_posture["hrm_role"]["promotion_ramp"]),
+            "",
+            "### HRM Promotion Requirements",
+            *(f"- {rule}" for rule in operating_posture["hrm_role"]["promotion_requirements"]),
+            "",
+            "## Readiness Contract",
+            "",
+            "### Failure States",
+            *(
+                f"- {row['name']}: {row['meaning']}"
+                for row in readiness_contract["failure_states"]
+            ),
+            "",
+            "### Synthetic Milestones",
+            *(
+                f"- {row['name']}: tasks={','.join(row['tasks'])} | expected={row['expected_outcome']}"
+                for row in readiness_contract["synthetic_milestones"]
+            ),
+            "",
+            "### Market Gates",
+            *(
+                f"- {row['name']}: expected={row['expected_outcome']}"
+                for row in readiness_contract["market_gates"]
+            ),
+            "",
             "## Stages",
             "",
         ]
         for row in stages_out:
             codex_lines.extend(
                 [
-                    f"### {row['name']}",
+                    f"### {row['display_name']}",
+                    f"- stage_name: {row['name']}",
                     f"- pair_width_target: {row['pair_width_target']}",
                     f"- pair_width_resolved: {row['pair_width_resolved']}",
                     f"- codec_outputs: {row['codec_outputs']}",
@@ -1396,9 +1550,10 @@ class WorkspaceCoordinator:
                     f"- bar_sequences_per_episode: {row['bar_sequences_per_episode']}",
                     f"- publish_swimlane_width_command: `{row['publish_swimlane_width_command']}`",
                     f"- train_command: `{row['train_command']}`",
-                    "",
                 ]
             )
+            codex_lines.extend([f"- note: {note}" for note in row["stage_notes"]])
+            codex_lines.append("")
 
         out_json.parent.mkdir(parents=True, exist_ok=True)
         out_sh.parent.mkdir(parents=True, exist_ok=True)

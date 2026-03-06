@@ -43,6 +43,32 @@ class Timeframe(str, Enum):
         return mapping[tf]
 
 
+class TimeframeUtils:
+    @staticmethod
+    def from_string(tf_str: str) -> Timeframe:
+        mapping = {
+            "1m": Timeframe.ONE_MINUTE,
+            "5m": Timeframe.FIVE_MINUTE,
+            "15m": Timeframe.FIFTEEN_MINUTE,
+            "30m": Timeframe.THIRTY_MINUTE,
+            "1h": Timeframe.ONE_HOUR,
+            "2h": Timeframe.TWO_HOUR,
+            "6h": Timeframe.SIX_HOUR,
+            "1d": Timeframe.ONE_DAY,
+            "ONE_MINUTE": Timeframe.ONE_MINUTE,
+            "FIVE_MINUTE": Timeframe.FIVE_MINUTE,
+            "FIFTEEN_MINUTE": Timeframe.FIFTEEN_MINUTE,
+            "THIRTY_MINUTE": Timeframe.THIRTY_MINUTE,
+            "ONE_HOUR": Timeframe.ONE_HOUR,
+            "TWO_HOUR": Timeframe.TWO_HOUR,
+            "SIX_HOUR": Timeframe.SIX_HOUR,
+            "ONE_DAY": Timeframe.ONE_DAY,
+        }
+        if tf_str not in mapping:
+            raise ValueError(f"Invalid timeframe string: {tf_str}")
+        return mapping[tf_str]
+
+
 @dataclass
 class Candle:
     timestamp: datetime
@@ -301,6 +327,14 @@ class SimulatorConfig:
     commission_pct: float = 0.1
     poll_interval_seconds: int = 60
     backtest_start_days_ago: int = 90
+    enable_hrm_shadow: bool = False
+    hrm_shadow_mode: str = "shadow"
+    hrm_confidence_threshold: float = 0.6
+    hrm_model_path: Optional[str] = None
+    enable_killswitch: bool = False
+    daily_loss_limit_pct: float = 3.0
+    cumulative_loss_limit_pct: float = 10.0
+    max_consecutive_losses: int = 5
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -311,4 +345,12 @@ class SimulatorConfig:
             "commission_pct": self.commission_pct,
             "poll_interval_seconds": self.poll_interval_seconds,
             "backtest_start_days_ago": self.backtest_start_days_ago,
+            "enable_hrm_shadow": self.enable_hrm_shadow,
+            "hrm_shadow_mode": self.hrm_shadow_mode,
+            "hrm_confidence_threshold": self.hrm_confidence_threshold,
+            "hrm_model_path": self.hrm_model_path,
+            "enable_killswitch": self.enable_killswitch,
+            "daily_loss_limit_pct": self.daily_loss_limit_pct,
+            "cumulative_loss_limit_pct": self.cumulative_loss_limit_pct,
+            "max_consecutive_losses": self.max_consecutive_losses,
         }

@@ -3,6 +3,7 @@ curly_succotash = "/Users/jim/work/curly-succotash"
 moneyfan = "/Users/jim/work/moneyfan"
 freqtrade = "/Users/jim/work/freqtrade"
 trikeshed = "/Users/jim/work/trikeshed"
+ane = "/Users/jim/work/ANE"
 
 [binance_vision]
 base_url = "https://data.binance.vision/data/spot/monthly/klines"
@@ -132,8 +133,12 @@ output_shell_path = "/Users/jim/work/curly-succotash/coordination/runtime/run_hr
 output_codex_path = "/Users/jim/work/curly-succotash/coordination/runtime/hrm_training_codex.md"
 swimlane_dsel_path = "/Users/jim/work/curly-succotash/coordination/runtime/hrm_swimlanes.dsel"
 
+# HRM Training Stages with Honest Width Validation
+# Stage names include width configuration for clarity
+# Validation: pair_width must match configured universe size
+
 [[harness.stages]]
-name = "convergence_4x4"
+name = "convergence_4x4_w4"  # 4 pairs x 4 codec outputs, effective width 4
 pair_width = 4
 codec_outputs = 4
 effective_width = 4
@@ -143,9 +148,10 @@ bar_sequences_per_episode = 64
 min_bar_window = 64
 max_bar_window = 192
 candles_per_extent = 1000
+# HONESTY CHECK: pair_width=4 <= canary_basket.primary_symbols (3) + secondary (2) = 5 ✓
 
 [[harness.stages]]
-name = "hrm_24x24"
+name = "hrm_24x24_w24"  # 24 pairs x 24 codec outputs, effective width 24
 pair_width = 24
 codec_outputs = 24
 effective_width = 24
@@ -155,9 +161,11 @@ bar_sequences_per_episode = 100
 min_bar_window = 64
 max_bar_window = 256
 candles_per_extent = 1500
+# HONESTY CHECK: pair_width=24 > canary_basket (5), requires full binance_vision symbols (7) + expansion
+# WARNING: This stage exceeds current canary basket - mark as SHADOW_ONLY until promotion
 
 [[harness.stages]]
-name = "hrm_24x64"
+name = "hrm_24x64_w64"  # 64 pairs x 24 codec outputs, effective width 64
 pair_width = 64
 codec_outputs = 24
 effective_width = 64
@@ -167,9 +175,11 @@ bar_sequences_per_episode = 120
 min_bar_window = 64
 max_bar_window = 256
 candles_per_extent = 2000
+# HONESTY CHECK: pair_width=64 >> current universe (7) - REQUIRES full Coinbase Advanced Spot universe
+# STAGE BLOCKED: Requires universe expansion to 64+ symbols
 
 [[harness.stages]]
-name = "hrm_24x512"
+name = "hrm_24x512_w512"  # 512 pairs x 24 codec outputs, effective width 512
 pair_width = 512
 codec_outputs = 24
 effective_width = 512
@@ -179,6 +189,8 @@ bar_sequences_per_episode = 160
 min_bar_window = 64
 max_bar_window = 256
 candles_per_extent = 2500
+# HONESTY CHECK: pair_width=512 >> current universe (7) - REQUIRES massive universe expansion
+# STAGE BLOCKED: Requires universe expansion to 512+ symbols (full Binance/ Coinbase spot markets)
 
 [risk_profiles]
 strategy_profiles_path = "/Users/jim/work/curly-succotash/coordination/strategy_profiles.toml"

@@ -1,0 +1,250 @@
+/**
+ * Canonical Exchange Target and Data Source Tags
+ *
+ * This document defines the canonical tagging scheme for exchange targets
+ * and data sources across bridge, fills, and reports.
+ *
+ * Purpose: Ensure consistent identification of trading venues and data
+ * origins throughout the system to prevent misrouting and enable accurate
+ * attribution analysis.
+ */
+
+{
+  "version": "1.0",
+  "created_at": "2026-03-06",
+  "last_updated": "2026-03-06",
+
+  "exchange_targets": {
+    "description": "Canonical identifiers for trading venues",
+    "format": "{EXCHANGE}_{ASSET_TYPE}_{NETWORK}",
+
+    "coinbase": {
+      "spot_mainnet": {
+        "tag": "COINBASE_SPOT_MAINNET",
+        "abbreviation": "CB_SPOT",
+        "api_base": "https://api.coinbase.com",
+        "websocket_url": "wss://advanced-trade-ws.coinbase.com",
+        "supported_assets": ["BTC", "ETH", "SOL", "USDT", "USDC"],
+        "trading_hours": "24/7",
+        "settlement": "T+0"
+      }
+    },
+
+    "binance": {
+      "spot_mainnet": {
+        "tag": "BINANCE_SPOT_MAINNET",
+        "abbreviation": "BN_SPOT",
+        "api_base": "https://api.binance.com",
+        "websocket_url": "wss://stream.binance.com:9443/ws",
+        "supported_assets": ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "USDT"],
+        "trading_hours": "24/7",
+        "settlement": "T+0"
+      },
+      "futures_mainnet": {
+        "tag": "BINANCE_FUTURES_MAINNET",
+        "abbreviation": "BN_FUT",
+        "api_base": "https://fapi.binance.com",
+        "websocket_url": "wss://fstream.binance.com/ws",
+        "supported_assets": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+        "trading_hours": "24/7",
+        "settlement": "T+0"
+      }
+    },
+
+    "freqtrade": {
+      "paper_trading": {
+        "tag": "FREQTRADE_PAPER",
+        "abbreviation": "FT_PAPER",
+        "description": "Freqtrade paper trading bridge",
+        "supported_exchanges": ["binance", "coinbase", "kraken"],
+        "mode": "simulation"
+      },
+      "live_trading": {
+        "tag": "FREQTRADE_LIVE",
+        "abbreviation": "FT_LIVE",
+        "description": "Freqtrade live trading bridge",
+        "supported_exchanges": ["binance", "coinbase", "kraken"],
+        "mode": "live"
+      }
+    },
+
+    "trikeshed": {
+      "kotlin_native": {
+        "tag": "TRIKESHED_NATIVE",
+        "abbreviation": "TS_NATIVE",
+        "description": "Kotlin/Native indicator computation",
+        "mode": "feature_extraction"
+      }
+    }
+  },
+
+  "data_sources": {
+    "description": "Canonical identifiers for data origins",
+    "format": "{SOURCE_TYPE}_{PROVIDER}_{QUALITY}",
+
+    "live_market_data": {
+      "coinbase_websocket": {
+        "tag": "LIVE_COINBASE_WS_REALTIME",
+        "latency_ms": "<100",
+        "quality": "TICK",
+        "format": "JSON",
+        "schema_version": "1.0"
+      },
+      "binance_websocket": {
+        "tag": "LIVE_BINANCE_WS_REALTIME",
+        "latency_ms": "<50",
+        "quality": "TICK",
+        "format": "JSON",
+        "schema_version": "1.0"
+      }
+    },
+
+    "historical_data": {
+      "binance_vision": {
+        "tag": "HISTORICAL_BINANCE_VISION_ARCHIVED",
+        "quality": "BATCH",
+        "format": "CSV.GZ",
+        "granularity": ["1m", "5m", "15m", "1h", "4h", "1d"],
+        "storage": "duckdb",
+        "duckdb_path": "/Users/jim/work/moneyfan/data/binance/hrm_data.duckdb"
+      },
+      "coinbase_rest": {
+        "tag": "HISTORICAL_COINBASE_REST_CACHED",
+        "quality": "BATCH",
+        "format": "JSON",
+        "granularity": ["1m", "5m", "15m", "1h", "4h", "1d"],
+        "storage": "memory_buffer"
+      }
+    },
+
+    "synthetic_data": {
+      "replay_engine": {
+        "tag": "SYNTHETIC_REPLAY_HISTORICAL",
+        "description": "Replay engine streaming historical data",
+        "modes": ["realtime", "compressed", "step_through", "instant"],
+        "quality": "DETERMINISTIC"
+      },
+      "adversarial_noise": {
+        "tag": "SYNTHETIC_ADVERSARIAL_NOISE",
+        "description": "Noise injection for robustness training",
+        "agents": ["noise", "gap", "regime_shift", "flash_crash", "latency"],
+        "quality": "STOCHASTIC"
+      },
+      "hrm_shadow": {
+        "tag": "SYNTHETIC_HRM_SHADOW",
+        "description": "HRM shadow mode predictions",
+        "mode": "COUNTERFACTUAL",
+        "quality": "MODEL_DEPENDENT"
+      }
+    },
+
+    "derived_data": {
+      "indicators_kotlin": {
+        "tag": "DERIVED_INDICATORS_KOTLIN",
+        "description": "Technical indicators computed by TrikeShed",
+        "computation": "KOTLIN_NATIVE",
+        "quality": "VALIDATED"
+      },
+      "indicators_python": {
+        "tag": "DERIVED_INDICATORS_PYTHON",
+        "description": "Technical indicators computed by Python",
+        "computation": "PANDAS_NUMPY",
+        "quality": "REFERENCE"
+      },
+      "hrm_signals": {
+        "tag": "DERIVED_HRM_SIGNALS",
+        "description": "HRM model predictions and confidence scores",
+        "computation": "ML_INFERENCE",
+        "quality": "MODEL_DEPENDENT"
+      }
+    }
+  },
+
+  "fill_attribution": {
+    "description": "Required tags for trade fill attribution",
+    "required_fields": [
+      "exchange_target",
+      "data_source_primary",
+      "data_source_secondary",
+      "signal_origin",
+      "execution_path"
+    ],
+
+    "example": {
+      "fill_id": "fill_20260306_001",
+      "symbol": "BTCUSDT",
+      "side": "BUY",
+      "price": 67500.0,
+      "size": 0.01,
+      "timestamp": "2026-03-06T12:34:56.789Z",
+      "exchange_target": "BINANCE_SPOT_MAINNET",
+      "data_source_primary": "LIVE_BINANCE_WS_REALTIME",
+      "data_source_secondary": "HISTORICAL_BINANCE_VISION_ARCHIVED",
+      "signal_origin": "DERIVED_HRM_SIGNALS",
+      "execution_path": "FREQTRADE_PAPER",
+      "fees": {
+        "amount": 0.675,
+        "currency": "USDT",
+        "rate": 0.001
+      }
+    }
+  },
+
+  "report_tags": {
+    "description": "Mandatory tags for all performance reports",
+    "required_metadata": [
+      "report_type",
+      "data_source_tags",
+      "exchange_targets",
+      "time_range",
+      "model_versions"
+    ],
+
+    "report_types": {
+      "daily_scoreboard": {
+        "tag": "RPT_DAILY_SCOREBOARD",
+        "frequency": "DAILY",
+        "recipients": ["operators", "researchers"],
+        "content": ["baseline_pnl", "hrm_shadow_pnl", "veto_decisions"]
+      },
+      "performance_attribution": {
+        "tag": "RPT_PERF_ATTRIBUTION",
+        "frequency": "WEEKLY",
+        "recipients": ["researchers"],
+        "content": ["pnl_by_source", "pnl_by_exchange", "slippage_analysis"]
+      },
+      "model_evaluation": {
+        "tag": "RPT_MODEL_EVAL",
+        "frequency": "PER_MODEL",
+        "recipients": ["ml_engineers"],
+        "content": ["synthetic_gates", "market_gates", "promotion_readiness"]
+      }
+    }
+  },
+
+  "validation_rules": {
+    "exchange_target": {
+      "pattern": "^[A-Z]+_[A-Z]+_(MAINNET|TESTNET|PAPER)$",
+      "required": true,
+      "immutable_after_fill": true
+    },
+    "data_source": {
+      "pattern": "^(LIVE|HISTORICAL|SYNTHETIC|DERIVED)_[A-Z]+_[A-Z]+$",
+      "required": true,
+      "must_match_schema": true
+    },
+    "cross_reference": {
+      "description": "Validate that data source matches exchange target",
+      "rules": [
+        {
+          "if_exchange": "BINANCE_*",
+          "valid_sources": ["LIVE_BINANCE_*", "HISTORICAL_BINANCE_*", "SYNTHETIC_*"]
+        },
+        {
+          "if_exchange": "COINBASE_*",
+          "valid_sources": ["LIVE_COINBASE_*", "HISTORICAL_COINBASE_*", "SYNTHETIC_*"]
+        }
+      ]
+    }
+  }
+}

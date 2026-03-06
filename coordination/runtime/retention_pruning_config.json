@@ -1,0 +1,233 @@
+/**
+ * Retention and Pruning Defaults
+ *
+ * Configuration for runtime reports, snapshots, and training artifacts.
+ * Tightened defaults to reduce storage costs while maintaining audit capability.
+ */
+
+{
+  "version": "1.0",
+  "effective_date": "2026-03-06",
+  "rationale": "Reduce storage costs and improve signal-to-noise ratio in retained artifacts",
+
+  "runtime_reports": {
+    "description": "Reports generated during live operation",
+
+    "daily_scoreboard": {
+      "retention_days": 365,
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 10,
+      "pruning_policy": "keep_all_within_retention",
+      "storage_path": "/Users/jim/work/curly-succotash/logs/scoreboards"
+    },
+
+    "operator_runbook": {
+      "retention_days": 90,
+      "format": "markdown",
+      "compression": "none",
+      "max_size_mb": 5,
+      "pruning_policy": "keep_all_within_retention",
+      "storage_path": "/Users/jim/work/curly-succotash/logs/runbooks"
+    },
+
+    "veto_decisions": {
+      "retention_days": 180,
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 50,
+      "pruning_policy": "aggregate_after_30_days",
+      "storage_path": "/Users/jim/work/curly-succotash/logs/vetoes",
+      "aggregation_rule": "daily_summary_only_after_30d"
+    },
+
+    "fill_attributions": {
+      "retention_days": 730,
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 100,
+      "pruning_policy": "keep_all_within_retention",
+      "storage_path": "/Users/jim/work/curly-succotash/logs/fills",
+      "regulatory_requirement": true
+    }
+  },
+
+  "snapshots": {
+    "description": "Point-in-time state captures",
+
+    "strategy_state": {
+      "retention_days": 30,
+      "snapshot_interval_minutes": 5,
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 20,
+      "pruning_policy": "keep_hourly_after_24h",
+      "storage_path": "/Users/jim/work/curly-succotash/coordination/runtime/snapshots/strategy",
+      "retention_schedule": {
+        "0-24h": "keep_all",
+        "1-7d": "keep_hourly",
+        "7-30d": "keep_daily"
+      }
+    },
+
+    "hrm_state": {
+      "retention_days": 14,
+      "snapshot_interval_minutes": 1,
+      "format": "pickle",
+      "compression": "gzip",
+      "max_size_mb": 500,
+      "pruning_policy": "keep_only_checkpoints_after_24h",
+      "storage_path": "/Users/jim/work/curly-succotash/coordination/runtime/snapshots/hrm",
+      "retention_schedule": {
+        "0-24h": "keep_all",
+        "1-14d": "keep_checkpoint_only"
+      }
+    },
+
+    "market_state": {
+      "retention_days": 7,
+      "snapshot_interval_minutes": 15,
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 100,
+      "pruning_policy": "keep_only_latest",
+      "storage_path": "/Users/jim/work/curly-succotash/coordination/runtime/snapshots/market"
+    }
+  },
+
+  "training_artifacts": {
+    "description": "ML training outputs and checkpoints",
+
+    "checkpoints": {
+      "retention_count": 5,
+      "retention_policy": "keep_last_n",
+      "format": "safetensors",
+      "compression": "none",
+      "max_size_gb": 50,
+      "storage_path": "/Users/jim/work/moneyfan/checkpoints",
+      "pruning_trigger": "on_new_checkpoint",
+      "pruning_action": "delete_oldest_when_exceeds_count"
+    },
+
+    "tensorboard_logs": {
+      "retention_days": 90,
+      "format": "events",
+      "compression": "none",
+      "max_size_gb": 20,
+      "storage_path": "/Users/jim/work/moneyfan/logs/tensorboard",
+      "pruning_policy": "delete_oldest_when_exceeds_size"
+    },
+
+    "experiment_configs": {
+      "retention_days": 730,
+      "format": "json",
+      "compression": "none",
+      "max_size_mb": 10,
+      "storage_path": "/Users/jim/work/moneyfan/experiments",
+      "pruning_policy": "keep_all_within_retention",
+      "permanent": true
+    },
+
+    "synthetic_gate_results": {
+      "retention_days": 365,
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 100,
+      "storage_path": "/Users/jim/work/moneyfan/results/synthetic_gates",
+      "pruning_policy": "aggregate_weekly_after_30d",
+      "aggregation_rule": "weekly_summary_statistics"
+    },
+
+    "market_gate_results": {
+      "retention_days": 730,
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 500,
+      "storage_path": "/Users/jim/work/moneyfan/results/market_gates",
+      "pruning_policy": "keep_all_within_retention",
+      "permanent": true
+    }
+  },
+
+  "backtest_results": {
+    "description": "Historical backtest outputs",
+
+    "quick_backtests": {
+      "retention_days": 7,
+      "max_runtime_minutes": 5,
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 10,
+      "storage_path": "/Users/jim/work/curly-succotash/logs/backtests/quick",
+      "pruning_policy": "delete_after_7_days",
+      "description": "Fast iteration backtests, low retention"
+    },
+
+    "full_backtests": {
+      "retention_days": 90,
+      "min_runtime_minutes": 5,
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 100,
+      "storage_path": "/Users/jim/work/curly-succotash/logs/backtests/full",
+      "pruning_policy": "keep_all_within_retention",
+      "requires_tagging": true
+    },
+
+    "milestone_backtests": {
+      "retention_days": -1,
+      "description": "Permanent retention for milestone validation",
+      "format": "json",
+      "compression": "gzip",
+      "max_size_mb": 500,
+      "storage_path": "/Users/jim/work/curly-succotash/logs/backtests/milestones",
+      "pruning_policy": "permanent",
+      "requires_artifact_manifest": true
+    }
+  },
+
+  "pruning_automation": {
+    "description": "Automated pruning execution",
+
+    "scheduler": {
+      "enabled": true,
+      "cron": "0 3 * * *",
+      "timezone": "UTC",
+      "description": "Run daily at 3 AM UTC"
+    },
+
+    "notifications": {
+      "on_prune_complete": true,
+      "on_storage_threshold": true,
+      "storage_threshold_pct": 80,
+      "notification_channels": ["log", "email"]
+    },
+
+    "safety_limits": {
+      "min_retention_enforced": true,
+      "max_delete_per_run": 100,
+      "require_manifest_for_permanent": true,
+      "backup_before_prune": false,
+      "dry_run_available": true
+    }
+  },
+
+  "storage_quotas": {
+    "description": "Maximum storage allocation by category",
+
+    "logs_total_gb": 50,
+    "snapshots_total_gb": 20,
+    "training_artifacts_total_gb": 200,
+    "backtests_total_gb": 50,
+    "checkpoints_total_gb": 100,
+
+    "alert_threshold_pct": 80,
+    "critical_threshold_pct": 95,
+
+    "actions_on_threshold": {
+      "80_pct": "send_alert",
+      "90_pct": "aggressive_pruning",
+      "95_pct": "block_new_artifacts"
+    }
+  }
+}

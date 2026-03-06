@@ -1,0 +1,89 @@
+{
+  "description": "Canary symbol/timeframe basket for HRM first paper-trading promotion",
+  "version": "1.0",
+  "created_at": "2026-03-06",
+  "basket": {
+    "primary_symbols": [
+      {
+        "symbol": "BTCUSDT",
+        "priority": 1,
+        "rationale": "Highest liquidity, lowest slippage, benchmark asset",
+        "timeframes": ["15m", "1h"],
+        "allocation_weight": 0.40
+      },
+      {
+        "symbol": "ETHUSDT",
+        "priority": 2,
+        "rationale": "Second highest liquidity, high correlation with BTC",
+        "timeframes": ["15m", "1h"],
+        "allocation_weight": 0.30
+      },
+      {
+        "symbol": "SOLUSDT",
+        "priority": 3,
+        "rationale": "High volatility, good for testing breakout strategies",
+        "timeframes": ["15m", "1h"],
+        "allocation_weight": 0.20
+      }
+    ],
+    "secondary_symbols": [
+      {
+        "symbol": "BNBUSDT",
+        "priority": 4,
+        "rationale": "Exchange token, moderate volatility",
+        "timeframes": ["1h"],
+        "allocation_weight": 0.05
+      },
+      {
+        "symbol": "XRPUSDT",
+        "priority": 5,
+        "rationale": "High liquidity, distinct market dynamics",
+        "timeframes": ["1h"],
+        "allocation_weight": 0.05
+      }
+    ]
+  },
+  "promotion_criteria": {
+    "shadow_mode": {
+      "min_days": 7,
+      "min_trades": 100,
+      "require_beat_baseline": true
+    },
+    "veto_only": {
+      "min_days": 14,
+      "min_trades": 200,
+      "require_beat_baseline": true,
+      "max_drawdown_pct": 5.0
+    },
+    "size_capped": {
+      "min_days": 30,
+      "min_trades": 500,
+      "require_beat_baseline": true,
+      "max_drawdown_pct": 8.0,
+      "max_position_size_pct": 1.0
+    },
+    "primary": {
+      "min_days": 60,
+      "min_trades": 1000,
+      "require_beat_baseline": true,
+      "max_drawdown_pct": 10.0,
+      "sharpe_ratio_min": 1.5
+    }
+  },
+  "baseline_comparison": {
+    "baseline_strategy": "MA_CROSSOVER_21_55",
+    "comparison_metrics": [
+      "net_pnl",
+      "sharpe_ratio",
+      "max_drawdown",
+      "win_rate",
+      "profit_factor"
+    ]
+  },
+  "kill_switch": {
+    "daily_loss_limit_pct": 3.0,
+    "cumulative_loss_limit_pct": 10.0,
+    "consecutive_losses": 5,
+    "volatility_spike_multiplier": 3.0
+  }
+}

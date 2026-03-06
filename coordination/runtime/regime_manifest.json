@@ -1,0 +1,449 @@
+{
+  "version": "1.0",
+  "created_at": "2026-03-06",
+  "description": "Canonical regime manifest with mandatory coverage policy",
+  "purpose": "Define market regimes for regime-aware training, validation, and threshold scheduling",
+
+  "regime_taxonomy": {
+    "description": "Hierarchical regime classification system",
+
+    "volatility_regimes": {
+      "description": "Classification by market volatility level",
+      "regimes": [
+        {
+          "id": "VOL_LOW",
+          "name": "Low Volatility",
+          "definition": {
+            "atr_14d_percentile": "< 25",
+            "realized_vol_annualized": "< 15%"
+          },
+          "characteristics": [
+            "Tight ranges",
+            "Low breakout success",
+            "Mean reversion favored"
+          ],
+          "strategy_bias": ["mean_reversion", "grid"],
+          "risk_adjustment": 0.8
+        },
+        {
+          "id": "VOL_NORMAL",
+          "name": "Normal Volatility",
+          "definition": {
+            "atr_14d_percentile": "25-75",
+            "realized_vol_annualized": "15-40%"
+          },
+          "characteristics": [
+            "Moderate ranges",
+            "Balanced breakout/mean-reversion",
+            "Normal trading conditions"
+          ],
+          "strategy_bias": ["trend", "momentum", "breakout"],
+          "risk_adjustment": 1.0
+        },
+        {
+          "id": "VOL_HIGH",
+          "name": "High Volatility",
+          "definition": {
+            "atr_14d_percentile": "> 75",
+            "realized_vol_annualized": "40-80%"
+          },
+          "characteristics": [
+            "Wide ranges",
+            "High breakout success",
+            "Trend following favored"
+          ],
+          "strategy_bias": ["trend", "volatile_breakout", "momentum"],
+          "risk_adjustment": 1.2
+        },
+        {
+          "id": "VOL_EXTREME",
+          "name": "Extreme Volatility",
+          "definition": {
+            "atr_14d_percentile": "> 95",
+            "realized_vol_annualized": "> 80%"
+          },
+          "characteristics": [
+            "Very wide ranges",
+            "Flash crashes/pumps",
+            "High risk, reduce size"
+          ],
+          "strategy_bias": ["protective"],
+          "risk_adjustment": 0.5
+        }
+      ]
+    },
+
+    "trend_regimes": {
+      "description": "Classification by trend direction and strength",
+      "regimes": [
+        {
+          "id": "TREND_BULL_STRONG",
+          "name": "Strong Bull",
+          "definition": {
+            "adx": "> 30",
+            "di_plus_minus_ratio": "> 2.0",
+            "price_vs_ma50": "> 5%"
+          },
+          "characteristics": [
+            "Sustained uptrend",
+            "Higher highs and higher lows",
+            "Pullbacks are buying opportunities"
+          ],
+          "strategy_bias": ["trend", "momentum", "breakout"],
+          "position_bias": "LONG_ONLY"
+        },
+        {
+          "id": "TREND_BULL_WEAK",
+          "name": "Weak Bull",
+          "definition": {
+            "adx": "< 25",
+            "di_plus_minus_ratio": "1.0-2.0",
+            "price_vs_ma50": "0-5%"
+          },
+          "characteristics": [
+            "Weak uptrend",
+            "Choppy price action",
+            "Direction unclear"
+          ],
+          "strategy_bias": ["mean_reversion", "grid"],
+          "position_bias": "LONG_BIAS"
+        },
+        {
+          "id": "TREND_RANGE",
+          "name": "Range-Bound",
+          "definition": {
+            "adx": "< 20",
+            "di_plus_minus_ratio": "0.8-1.2",
+            "price_vs_ma50": "-2% to +2%"
+          },
+          "characteristics": [
+            "Sideways movement",
+            "Clear support/resistance",
+            "Mean reversion dominant"
+          ],
+          "strategy_bias": ["mean_reversion", "grid", "liquidity_rotation"],
+          "position_bias": "NEUTRAL"
+        },
+        {
+          "id": "TREND_BEAR_WEAK",
+          "name": "Weak Bear",
+          "definition": {
+            "adx": "< 25",
+            "di_plus_minus_ratio": "0.5-1.0",
+            "price_vs_ma50": "-5% to 0%"
+          },
+          "characteristics": [
+            "Weak downtrend",
+            "Choppy price action",
+            "Direction unclear"
+          ],
+          "strategy_bias": ["mean_reversion", "grid"],
+          "position_bias": "SHORT_BIAS"
+        },
+        {
+          "id": "TREND_BEAR_STRONG",
+          "name": "Strong Bear",
+          "definition": {
+            "adx": "> 30",
+            "di_plus_minus_ratio": "< 0.5",
+            "price_vs_ma50": "< -5%"
+          },
+          "characteristics": [
+            "Sustained downtrend",
+            "Lower lows and lower highs",
+            "Rallies are selling opportunities"
+          ],
+          "strategy_bias": ["trend", "momentum"],
+          "position_bias": "SHORT_ONLY"
+        }
+      ]
+    },
+
+    "liquidity_regimes": {
+      "description": "Classification by market liquidity conditions",
+      "regimes": [
+        {
+          "id": "LIQ_HIGH",
+          "name": "High Liquidity",
+          "definition": {
+            "avg_volume_20d_percentile": "> 75",
+            "bid_ask_spread_bps": "< 5"
+          },
+          "characteristics": [
+            "Tight spreads",
+            "High volume",
+            "Low slippage"
+          ],
+          "strategy_bias": ["all"],
+          "slippage_adjustment": 0.8
+        },
+        {
+          "id": "LIQ_NORMAL",
+          "name": "Normal Liquidity",
+          "definition": {
+            "avg_volume_20d_percentile": "25-75",
+            "bid_ask_spread_bps": "5-15"
+          },
+          "characteristics": [
+            "Normal spreads",
+            "Moderate volume",
+            "Moderate slippage"
+          ],
+          "strategy_bias": ["all"],
+          "slippage_adjustment": 1.0
+        },
+        {
+          "id": "LIQ_LOW",
+          "name": "Low Liquidity",
+          "definition": {
+            "avg_volume_20d_percentile": "< 25",
+            "bid_ask_spread_bps": "> 15"
+          },
+          "characteristics": [
+            "Wide spreads",
+            "Low volume",
+            "High slippage"
+          ],
+          "strategy_bias": ["protective"],
+          "slippage_adjustment": 1.5
+        }
+      ]
+    },
+
+    "macro_regimes": {
+      "description": "Classification by macroeconomic conditions",
+      "regimes": [
+        {
+          "id": "MACRO_RISK_ON",
+          "name": "Risk-On",
+          "definition": {
+            "btc_dominance_trend": "falling",
+            "altcoin_momentum": "strong",
+            "correlation_to_sp500": "positive"
+          },
+          "characteristics": [
+            "Altcoins outperforming",
+            "High risk appetite",
+            "Broad market participation"
+          ],
+          "strategy_bias": ["breakout", "momentum", "trend"],
+          "symbol_expansion": true
+        },
+        {
+          "id": "MACRO_RISK_OFF",
+          "name": "Risk-Off",
+          "definition": {
+            "btc_dominance_trend": "rising",
+            "altcoin_momentum": "weak",
+            "correlation_to_sp500": "negative"
+          },
+          "characteristics": [
+            "BTC/ETH outperforming",
+            "Low risk appetite",
+            "Flight to quality"
+          ],
+          "strategy_bias": ["protective", "mean_reversion"],
+          "symbol_expansion": false
+        },
+        {
+          "id": "MACRO_CRYPTO_WINTER",
+          "name": "Crypto Winter",
+          "definition": {
+            "btc_drawdown_from_ath": "> 50%",
+            "market_sentiment": "extreme_fear",
+            "volume_trend": "declining"
+          },
+          "characteristics": [
+            "Sustained downtrend",
+            "Low volume",
+            "Poor strategy performance"
+          ],
+          "strategy_bias": ["protective"],
+          "trading_halt_consideration": true
+        }
+      ]
+    }
+  },
+
+  "coverage_policy": {
+    "description": "Mandatory regime coverage requirements",
+
+    "training_requirements": {
+      "min_regimes_required": 4,
+      "required_regimes": [
+        "VOL_NORMAL",
+        "TREND_BULL_STRONG",
+        "TREND_BEAR_STRONG",
+        "TREND_RANGE"
+      ],
+      "min_samples_per_regime": 1000,
+      "min_regime_representation_pct": 10.0
+    },
+
+    "validation_requirements": {
+      "oos_regime_coverage": "all",
+      "cross_regime_validation": true,
+      "min_oos_samples_per_regime": 500,
+      "regime_balance_check": true
+    },
+
+    "promotion_requirements": {
+      "shadow_mode": {
+        "min_regimes_tested": 2,
+        "required_regimes": ["VOL_NORMAL", "TREND_RANGE"]
+      },
+      "veto_only": {
+        "min_regimes_tested": 3,
+        "required_regimes": ["VOL_NORMAL", "VOL_HIGH", "TREND_BULL_STRONG"]
+      },
+      "size_capped": {
+        "min_regimes_tested": 4,
+        "required_regimes": ["VOL_NORMAL", "VOL_HIGH", "TREND_BULL_STRONG", "TREND_BEAR_STRONG"]
+      },
+      "primary": {
+        "min_regimes_tested": 6,
+        "required_regimes": "all_major",
+        "stress_test_required": true
+      }
+    }
+  },
+
+  "regime_detection": {
+    "description": "Methods for detecting current regime",
+
+    "primary_method": {
+      "type": "sliding_window",
+      "window_days": 30,
+      "update_frequency": "daily",
+      "indicators": ["ATR", "ADX", "Volume", "Price vs MA"]
+    },
+
+    "secondary_method": {
+      "type": "hidden_markov_model",
+      "n_states": 5,
+      "features": ["returns", "volatility", "volume"],
+      "retrain_frequency": "weekly"
+    },
+
+    "validation_method": {
+      "type": "ensemble_voting",
+      "methods": ["sliding_window", "hmm", "rule_based"],
+      "min_agreement_pct": 66.7
+    }
+  },
+
+  "regime_aware_scheduling": {
+    "description": "Regime-aware threshold and parameter scheduling",
+
+    "confidence_thresholds": {
+      "VOL_LOW": {
+        "min_confidence": 0.5,
+        "position_size_multiplier": 0.8
+      },
+      "VOL_NORMAL": {
+        "min_confidence": 0.6,
+        "position_size_multiplier": 1.0
+      },
+      "VOL_HIGH": {
+        "min_confidence": 0.7,
+        "position_size_multiplier": 1.2
+      },
+      "VOL_EXTREME": {
+        "min_confidence": 0.8,
+        "position_size_multiplier": 0.5
+      }
+    },
+
+    "stoploss_adjustments": {
+      "VOL_LOW": {
+        "stoploss_multiplier": 0.8,
+        "take_profit_multiplier": 1.2
+      },
+      "VOL_NORMAL": {
+        "stoploss_multiplier": 1.0,
+        "take_profit_multiplier": 1.0
+      },
+      "VOL_HIGH": {
+        "stoploss_multiplier": 1.3,
+        "take_profit_multiplier": 0.9
+      },
+      "VOL_EXTREME": {
+        "stoploss_multiplier": 1.5,
+        "take_profit_multiplier": 0.7
+      }
+    },
+
+    "cooldown_adjustments": {
+      "VOL_LOW": {
+        "cooldown_multiplier": 1.0,
+        "hold_period_multiplier": 1.2
+      },
+      "VOL_NORMAL": {
+        "cooldown_multiplier": 1.0,
+        "hold_period_multiplier": 1.0
+      },
+      "VOL_HIGH": {
+        "cooldown_multiplier": 1.5,
+        "hold_period_multiplier": 0.8
+      },
+      "VOL_EXTREME": {
+        "cooldown_multiplier": 2.0,
+        "hold_period_multiplier": 0.5
+      }
+    }
+  },
+
+  "regime_manifest_schema": {
+    "description": "Schema for regime manifest files",
+    "required_fields": [
+      "regime_id",
+      "regime_name",
+      "regime_category",
+      "definition",
+      "characteristics",
+      "strategy_bias",
+      "risk_adjustment"
+    ],
+    "optional_fields": [
+      "position_bias",
+      "slippage_adjustment",
+      "symbol_expansion",
+      "trading_halt_consideration"
+    ]
+  },
+
+  "regime_logging": {
+    "description": "Regime tracking and logging requirements",
+
+    "daily_regime_report": {
+      "enabled": true,
+      "output_path": "/Users/jim/work/curly-succotash/logs/regimes/daily",
+      "fields": [
+        "date",
+        "detected_regimes",
+        "regime_confidence",
+        "detection_method",
+        "strategy_adjustments"
+      ]
+    },
+
+    "regime_transitions": {
+      "enabled": true,
+      "output_path": "/Users/jim/work/curly-succotash/logs/regimes/transitions",
+      "alert_on_transition": true,
+      "alert_channels": ["log", "dashboard"]
+    },
+
+    "regime_performance_attribution": {
+      "enabled": true,
+      "output_path": "/Users/jim/work/curly-succotash/logs/regimes/performance",
+      "frequency": "weekly",
+      "metrics": [
+        "pnl_by_regime",
+        "sharpe_by_regime",
+        "win_rate_by_regime",
+        "max_drawdown_by_regime"
+      ]
+    }
+  }
+}
