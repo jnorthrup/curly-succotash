@@ -2,6 +2,8 @@ fastapi
 uvicorn
 duckdb>=0.9.0
 numpy>=1.24.0
+scipy
+scikit-learn
 python-dotenv
 pydantic
 pydantic-settings
