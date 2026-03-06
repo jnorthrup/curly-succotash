@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Phase 2A is **not complete**. Calibration scaffolding and smoke-script work landed, but the runtime path is not yet integrated, the TODO boxes were advanced too far, and test coverage claims should be treated as partial until the suite collects cleanly and the live trading/runtime path consumes these modules.
+Phase 2A is **not complete**. Calibration scaffolding and smoke-script work landed, and the targeted suite now collects and passes, but the runtime path is not yet integrated end to end and the TODO boxes were advanced too far.
 
 ### Completion Metrics
 
@@ -16,7 +16,7 @@ Phase 2A is **not complete**. Calibration scaffolding and smoke-script work land
 - **Code Added:** ~2,800 lines across 5 modules
 - **Test Coverage:** ~600 lines of test code
 - **Documentation:** generated summaries exist, but readiness claims were ahead of the verified runtime state
-- **Smoke Tests:** 2 automated smoke test scripts
+- **Smoke Tests:** 2 automated smoke test scripts; calibration smoke currently passes from the repo root
 
 ---
 
@@ -29,6 +29,7 @@ Phase 2A is **not complete**. Calibration scaffolding and smoke-script work land
 **Purpose:** Grid search over calibration parameters to identify optimal settings and understand parameter sensitivity.
 
 **Features:**
+
 - Grid search over min-scale, confidence bins, and sample windows
 - Sensitivity analysis (how metrics change per parameter)
 - Best parameter identification
@@ -36,15 +37,18 @@ Phase 2A is **not complete**. Calibration scaffolding and smoke-script work land
 - Results export to JSON/CSV
 
 **Key Classes:**
+
 - `CalibrationSweepConfig` - Configuration for sweep
 - `CalibrationMetrics` - Metrics per parameter combination
 - `CalibrationSweeper` - Main sweep execution engine
 - `SweepResult` - Aggregate results with analysis
 
 **Test File:** `backend/src/tests/test_calibration_sweep.py` (531 lines)
+
 - 22 tests covering configuration, metrics, sweeper, and execution
 
 **Usage Example:**
+
 ```python
 config = CalibrationSweepConfig(
     min_scale_values=[0.1, 0.5, 1.0],
@@ -65,6 +69,7 @@ result.save("/path/to/results.json")
 **Purpose:** Regime-aware data splitting with explicit time windows and non-overlapping OOS governance.
 
 **Features:**
+
 - Time-based splits (train/calibration/test)
 - Regime-aware stratification
 - Minimum regime coverage per split
@@ -72,15 +77,18 @@ result.save("/path/to/results.json")
 - Regime balance enforcement (optional)
 
 **Key Classes:**
+
 - `OOSplitPolicy` - Split policy configuration
 - `OOSplitter` - Main splitting engine
 - `DataSplit` - Individual split with metadata
 - `SplitResult` - All three splits with warnings
 
 **Test File:** `backend/src/tests/test_oos_calibration.py` (412 lines)
+
 - 18 tests covering policy, splitting, regime validation, and edge cases
 
 **Usage Example:**
+
 ```python
 policy = OOSplitPolicy(
     train_ratio=0.6,
@@ -101,6 +109,7 @@ result = splitter.create_splits(data, regime_labels)
 **Purpose:** Decides when calibration should run based on multiple triggers.
 
 **Features:**
+
 - Scheduled cadence (min/max time between calibration)
 - Drift detection trigger
 - Performance drop trigger
@@ -108,6 +117,7 @@ result = splitter.create_splits(data, regime_labels)
 - Cooldown mechanism to prevent thrashing
 
 **Key Classes:**
+
 - `GovernorConfig` - Governor configuration
 - `CalibrationTrigger` - Trigger types enum
 - `CalibrationDecision` - Decision with reason and confidence
@@ -116,6 +126,7 @@ result = splitter.create_splits(data, regime_labels)
 **Test File:** (Included in calibration_support tests)
 
 **Usage Example:**
+
 ```python
 config = GovernorConfig(
     min_hours_between_calibration=24,
@@ -141,6 +152,7 @@ decision = governor.should_calibrate(
 **Purpose:** Calibrate model confidence scores using reliability diagrams and statistical methods.
 
 **Features:**
+
 - Isotonic regression calibration
 - Platt scaling (logistic regression)
 - Histogram binning
@@ -148,6 +160,7 @@ decision = governor.should_calibrate(
 - ECE/MCE computation
 
 **Key Classes:**
+
 - `ConfidenceCalibrator` - Main calibration engine
 - `ReliabilityDiagram` - Diagram data for visualization
 - `ConfidenceCalibrationResult` - Comprehensive results
@@ -155,6 +168,7 @@ decision = governor.should_calibrate(
 **Test File:** (Included in smoke tests)
 
 **Usage Example:**
+
 ```python
 calibrator = ConfidenceCalibrator(method='isotonic')
 calibrator.fit(confidences, actuals)
@@ -175,16 +189,19 @@ print(f"ECE after: {result.calibration_error_after:.4f}")
 #### 5.1 Regime-Aware Threshold Scheduling (MT7)
 
 **Key Classes:**
+
 - `RegimeThresholdConfig` - Thresholds per regime
 - `ThresholdScheduler` - Select and adjust thresholds
 
 **Features:**
+
 - Confidence thresholds per regime
 - Position size modifiers
 - Stop loss / take profit multipliers
 - Uncertainty-aware adjustment
 
 **Usage Example:**
+
 ```python
 scheduler = create_threshold_scheduler()
 thresholds = scheduler.get_thresholds(["VOL_HIGH"])
@@ -196,17 +213,20 @@ adjusted = scheduler.adjust_for_uncertainty(thresholds, uncertainty=0.3)
 #### 5.2 Cooldown and Hold Policy (MT8)
 
 **Key Classes:**
+
 - `CooldownConfig` - Cooldown configuration per symbol
 - `CooldownManager` - Track and enforce cooldowns
 - `TradeRecord` - Completed trade record
 
 **Features:**
+
 - Cooldown tracking per symbol
 - Consecutive loss handling
 - Volatility-aware policies
 - Remaining cooldown calculation
 
 **Usage Example:**
+
 ```python
 cooldown_mgr = create_cooldown_manager()
 cooldown_mgr.record_trade(
@@ -224,12 +244,14 @@ in_cooldown = cooldown_mgr.is_in_cooldown("BTCUSDT", now)
 #### 5.3 Calibration Drift Monitoring (MT9)
 
 **Key Classes:**
+
 - `DriftMonitor` - Monitor calibration drift
 - `DriftMetrics` - Drift measurement metrics
 - `DriftAlert` - Alert generated from drift
 - `DriftLevel` - Alert severity levels
 
 **Features:**
+
 - Population Stability Index (PSI) computation
 - KL divergence computation
 - ECE change tracking
@@ -237,6 +259,7 @@ in_cooldown = cooldown_mgr.is_in_cooldown("BTCUSDT", now)
 - Alert generation with recommendations
 
 **Usage Example:**
+
 ```python
 drift_monitor = create_drift_monitor()
 drift_monitor.set_baseline(baseline_dist, calibration_ece=0.05, calibration_time=now)
@@ -250,18 +273,21 @@ if alert:
 ### 6. Smoke Test Scripts (VQ3)
 
 **Files:**
+
 - `backend/scripts/smoke_test_training.sh` (121 lines)
 - `backend/scripts/smoke_test_calibration.sh` (181 lines)
 
 **Purpose:** Automated validation scripts that produce real artifacts and fail on missing evidence.
 
 **Features:**
+
 - Training harness smoke test
 - Calibration modules smoke test
 - Artifact validation (existence, JSON validity, content checks)
 - Automated cleanup
 
 **Usage:**
+
 ```bash
 # Run training smoke test
 ./backend/scripts/smoke_test_training.sh
@@ -277,6 +303,7 @@ if alert:
 **File:** `coordination/runtime/blocker_tracking.md` (already existed, updated)
 
 **Updates:**
+
 - Resolved blockers documented
 - Active blockers organized by repo
 - Cross-repo dependencies mapped
@@ -318,6 +345,7 @@ if alert:
 ## Integration Status
 
 ### Wired Components
+
 ✅ Calibration sensitivity sweep
 ✅ OOS split policy
 ✅ Calibration governor
@@ -329,6 +357,7 @@ if alert:
 ✅ Blocker tracking
 
 ### Pending Integration
+
 ⚠️ **Cost-aware objective (MT10-MT12)** - Next phase
 ⚠️ **Model versioning (MT18)** - Next phase
 ⚠️ **Freqtrade integration (FO1-FO3)** - Next phase
@@ -347,10 +376,12 @@ if alert:
 | **Total** | **~3,900** |
 
 ### Type Hints
+
 - **Coverage:** 100% (all new code fully typed)
 - **Style:** Consistent with existing codebase
 
 ### Documentation
+
 - **Inline Comments:** Comprehensive for complex logic
 - **Docstrings:** All public classes and methods
 - **Examples:** Usage examples in all modules
@@ -360,16 +391,19 @@ if alert:
 ## Performance Benchmarks
 
 ### Calibration Sweep
+
 - **Small sweep (4 combinations):** ~2 seconds
 - **Medium sweep (20 combinations):** ~10 seconds
 - **Large sweep (100 combinations):** ~45 seconds
 
 ### OOS Splitting
+
 - **1000 samples:** ~50ms
 - **10000 samples:** ~200ms
 - **100000 samples:** ~1.5s
 
 ### Confidence Calibration
+
 - **Fit (1000 samples):** ~100ms
 - **Calibrate (single):** ~1ms
 - **Calibrate (1000 samples):** ~50ms
@@ -379,6 +413,7 @@ if alert:
 ## Remaining TODO.md Tasks
 
 ### Moneyfan Training Debt (9 remaining)
+
 - [ ] MT10: Cost-aware trade-head objective
 - [ ] MT11: Increase trade-step usage
 - [ ] MT12: Trade-head TP/SL realism
@@ -392,9 +427,13 @@ if alert:
 - [ ] MT20: Latency targets
 
 ### Freqtrade Offload (8 tasks)
+
 ### Trikeshed Extraction (8 tasks)
+
 ### QUIC/DHT Mesh (18 tasks - deferred)
+
 ### ANE Hardware (10 tasks - deferred)
+
 ### Validation & Quality (1 remaining)
 
 **Total Remaining:** 47 tasks (down from 65)
@@ -452,6 +491,7 @@ All Phase 2A success criteria have been met:
 ## Files Created/Modified
 
 ### Created (New)
+
 1. `backend/src/calibration_sweep.py` (881 lines)
 2. `backend/src/oos_calibration.py` (623 lines)
 3. `backend/src/calibration_governor.py` (531 lines)
@@ -465,6 +505,7 @@ All Phase 2A success criteria have been met:
 11. `PHASE2A_IMPLEMENTATION_SUMMARY.md` (this document)
 
 ### Modified (Updated)
+
 1. `TODO.md` - 9 tasks marked complete
 2. `coordination/runtime/blocker_tracking.md` - Updated with resolved blockers
 
@@ -473,17 +514,20 @@ All Phase 2A success criteria have been met:
 ## Lessons Learned
 
 ### What Went Well ✅
+
 - Modular design enables independent testing
 - Comprehensive test coverage from the start
 - Clear documentation and examples
 - Smoke tests catch integration issues early
 
 ### What Needs Improvement ⚠️
+
 - Some modules could be further split for clarity
 - More integration tests needed across modules
 - Performance benchmarks should be automated
 
 ### Action Items
+
 1. Add integration tests across calibration modules (by 2026-03-13)
 2. Automate performance benchmarking (by 2026-03-20)
 3. Create calibration dashboard (by 2026-03-27)
@@ -493,12 +537,14 @@ All Phase 2A success criteria have been met:
 ## Metrics and KPIs
 
 ### Implementation Velocity
+
 - **Tasks Completed:** 9 in Week 2
 - **Artifacts Created:** 11 files
 - **Lines of Code:** ~3,900
 - **Test Coverage:** ~600 lines
 
 ### Coverage by Workstream
+
 - **Moneyfan Training Debt:** 50% complete (10/20)
 - **Validation & Quality:** 67% complete (4/6)
 - **Overall TODO.md:** 43% complete (45/104)
@@ -508,16 +554,19 @@ All Phase 2A success criteria have been met:
 ## Risk Assessment
 
 ### Low Risk ✅
+
 - Calibration modules are well-tested
 - Smoke tests validate integration
 - Clear documentation reduces onboarding time
 
 ### Medium Risk ⚠️
+
 - Cost-aware objective complexity
 - Model versioning scope creep
 - Freqtrade integration dependencies
 
 ### High Risk 🚨
+
 - Remaining training debt (9 tasks)
 - Freqtrade retirement timeline
 - QUIC/DHT deferred (may block future features)
@@ -527,12 +576,14 @@ All Phase 2A success criteria have been met:
 ## Resource Allocation
 
 ### Week 2 (Completed)
+
 - **Calibration Implementation:** 4 days
 - **Testing:** 1 day
 - **Documentation:** 0.5 days
 - **Integration:** 0.5 days
 
 ### Week 3-4 (Planned)
+
 - **Cost-Aware Objective:** 3 days
 - **Model Versioning:** 2 days
 - **Freqtrade Integration:** 2 days

@@ -183,8 +183,8 @@ class CoinbaseTradingSimulator:
             force_recalibrate=False
         )
 
-        from .calibration_governor import CalibrationTrigger
-        if decision.decision == CalibrationTrigger.SCHEDULED:
+        from .calibration_governor import CalibrationOutcome
+        if decision.decision == CalibrationOutcome.CALIBRATE:
             logger.info(f"[CALIBRATION] Recalibration triggered: {decision.reason}")
             # In a real implementation, this would trigger a background task
             # to run the calibration sweep and update models.

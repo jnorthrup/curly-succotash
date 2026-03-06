@@ -8,7 +8,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 OUTPUT_DIR="${SMOKE_TEST_OUTPUT_DIR:-/tmp/smoke_test_calibration}"
 
 echo "========================================="
@@ -17,7 +17,7 @@ echo "========================================="
 echo "Output directory: $OUTPUT_DIR"
 echo ""
 
-rm -rf "$OUTPUT_DIR"
+# Skip removal of system tmp to avoid Seatbelt issues
 mkdir -p "$OUTPUT_DIR"
 
 cd "$PROJECT_ROOT"
@@ -26,10 +26,10 @@ cd "$PROJECT_ROOT"
 echo "Testing calibration sweep..."
 python3 << EOF
 import sys
-sys.path.insert(0, '$PROJECT_ROOT/backend/src')
+sys.path.insert(0, '$PROJECT_ROOT')
 
-from calibration_sweep import CalibrationSweepConfig, CalibrationSweeper
-from models import Timeframe
+from backend.src.calibration_sweep import CalibrationSweepConfig, CalibrationSweeper
+from backend.src.models import Timeframe
 
 config = CalibrationSweepConfig(
     min_scale_values=[0.5, 1.0],
@@ -53,11 +53,11 @@ EOF
 echo "Testing OOS splits..."
 python3 << EOF
 import sys
-sys.path.insert(0, '$PROJECT_ROOT/backend/src')
+sys.path.insert(0, '$PROJECT_ROOT')
 
 from datetime import datetime, timezone, timedelta
-from oos_calibration import OOSplitPolicy, OOSplitter
-from models import Candle, Timeframe
+from backend.src.oos_calibration import OOSplitPolicy, OOSplitter
+from backend.src.models import Candle, Timeframe
 import numpy as np
 
 # Create synthetic data
@@ -94,9 +94,9 @@ EOF
 echo "Testing confidence calibration..."
 python3 << EOF
 import sys
-sys.path.insert(0, '$PROJECT_ROOT/backend/src')
+sys.path.insert(0, '$PROJECT_ROOT')
 
-from confidence_calibration import ConfidenceCalibrator
+from backend.src.confidence_calibration import ConfidenceCalibrator
 import numpy as np
 
 np.random.seed(42)
@@ -117,10 +117,10 @@ EOF
 echo "Testing calibration governor..."
 python3 << EOF
 import sys
-sys.path.insert(0, '$PROJECT_ROOT/backend/src')
+sys.path.insert(0, '$PROJECT_ROOT')
 
 from datetime import datetime, timezone, timedelta
-from calibration_governor import GovernorConfig, CalibrationGovernor
+from backend.src.calibration_governor import GovernorConfig, CalibrationGovernor
 
 config = GovernorConfig(
     min_hours_between_calibration=24,
@@ -165,10 +165,10 @@ EOF
 echo "Testing calibration support modules..."
 python3 << EOF
 import sys
-sys.path.insert(0, '$PROJECT_ROOT/backend/src')
+sys.path.insert(0, '$PROJECT_ROOT')
 
-from datetime import datetime, timezone
-from calibration_support import (
+from datetime import datetime, timezone, timedelta
+from backend.src.calibration_support import (
     create_threshold_scheduler,
     create_cooldown_manager,
     create_drift_monitor,

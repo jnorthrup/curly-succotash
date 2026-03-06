@@ -52,7 +52,7 @@ class CalibrationTrigger(Enum):
     INITIAL = "initial"  # First-time calibration
 
 
-class CalibrationDecision(Enum):
+class CalibrationOutcome(Enum):
     """Calibration decision outcomes."""
     CALIBRATE = "calibrate"
     SKIP = "skip"
@@ -136,7 +136,7 @@ class GovernorConfig:
 @dataclass
 class CalibrationDecision:
     """Result of governor decision."""
-    decision: CalibrationDecision
+    decision: CalibrationOutcome
     trigger: Optional[CalibrationTrigger]
     reason: str
     confidence: float  # 0.0-1.0 confidence in decision
@@ -185,6 +185,33 @@ class CalibrationGovernor:
         self._last_calibration_time: Optional[datetime] = None
         self._regime_sample_counts: Dict[str, int] = {}
 
+    def should_recalibrate(
+        self,
+        current_time: datetime,
+        performance_drop: bool = False,
+        drift_detected: bool = False,
+        force_recalibrate: bool = False
+    ) -> CalibrationDecision:
+        """Alias for should_calibrate with simplified boolean triggers.
+        
+        Matches the signature expected by CoinbaseTradingSimulator.
+        """
+        if force_recalibrate:
+            return self._create_decision(
+                CalibrationOutcome.CALIBRATE,
+                CalibrationTrigger.MANUAL,
+                "Manual forced recalibration",
+                confidence=1.0
+            )
+            
+        return self.should_calibrate(
+            last_calibration_time=self._last_calibration_time,
+            current_drift=self.config.drift_threshold if drift_detected else 0.0,
+            recent_performance=1.0 - self.config.performance_drop_threshold if performance_drop else 1.0,
+            regime_changed=False,
+            current_time=current_time
+        )
+
     def should_calibrate(
         self,
         last_calibration_time: Optional[datetime],
@@ -192,7 +219,8 @@ class CalibrationGovernor:
         recent_performance: float,
         regime_changed: bool,
         current_regime: Optional[str] = None,
-        samples_in_regime: int = 0
+        samples_in_regime: int = 0,
+        current_time: Optional[datetime] = None
     ) -> CalibrationDecision:
         """Evaluate triggers and decide if calibration is needed.
 
@@ -203,17 +231,18 @@ class CalibrationGovernor:
             regime_changed: Whether regime changed since last calibration
             current_regime: Current regime name
             samples_in_regime: Number of samples in current regime
+            current_time: Current simulation time (defaults to now)
 
         Returns:
             CalibrationDecision with decision and reason
         """
-        now = datetime.now(timezone.utc)
+        now = current_time or datetime.now(timezone.utc)
         self._last_calibration_time = last_calibration_time
 
         # Check if this is initial calibration
         if last_calibration_time is None:
             return self._create_decision(
-                CalibrationDecision.CALIBRATE,
+                CalibrationOutcome.CALIBRATE,
                 CalibrationTrigger.INITIAL,
                 "Initial calibration required",
                 confidence=1.0
@@ -223,7 +252,7 @@ class CalibrationGovernor:
         hours_since_cal = (now - last_calibration_time).total_seconds() / 3600
         if hours_since_cal < self.config.cooldown_after_calibration_hours:
             return self._create_decision(
-                CalibrationDecision.SKIP,
+                CalibrationOutcome.SKIP,
                 None,
                 f"In cooldown period ({hours_since_cal:.1f}h < {self.config.cooldown_after_calibration_hours}h)",
                 confidence=1.0
@@ -232,7 +261,7 @@ class CalibrationGovernor:
         # Check minimum time between calibration
         if hours_since_cal < self.config.min_hours_between_calibration:
             return self._create_decision(
-                CalibrationDecision.SKIP,
+                CalibrationOutcome.SKIP,
                 None,
                 f"Minimum interval not reached ({hours_since_cal:.1f}h < {self.config.min_hours_between_calibration}h)",
                 confidence=0.9
@@ -241,7 +270,7 @@ class CalibrationGovernor:
         # Check maximum time (forced calibration)
         if hours_since_cal >= self.config.max_hours_between_calibration:
             return self._create_decision(
-                CalibrationDecision.CALIBRATE,
+                CalibrationOutcome.CALIBRATE,
                 CalibrationTrigger.SCHEDULED,
                 f"Maximum interval exceeded ({hours_since_cal:.1f}h >= {self.config.max_hours_between_calibration}h)",
                 confidence=1.0,
@@ -251,7 +280,7 @@ class CalibrationGovernor:
         # Check drift trigger
         if self.config.enable_drift_detection and current_drift >= self.config.drift_threshold:
             return self._create_decision(
-                CalibrationDecision.CALIBRATE,
+                CalibrationOutcome.CALIBRATE,
                 CalibrationTrigger.DRIFT_DETECTED,
                 f"Drift threshold exceeded ({current_drift:.3f} >= {self.config.drift_threshold})",
                 confidence=min(1.0, current_drift / self.config.drift_threshold),
@@ -261,7 +290,7 @@ class CalibrationGovernor:
         # Check performance trigger
         if self.config.enable_performance_triggers and recent_performance <= (1.0 - self.config.performance_drop_threshold):
             return self._create_decision(
-                CalibrationDecision.CALIBRATE,
+                CalibrationOutcome.CALIBRATE,
                 CalibrationTrigger.PERFORMANCE_DROP,
                 f"Performance drop detected ({recent_performance:.3f} <= {1.0 - self.config.performance_drop_threshold:.3f})",
                 confidence=min(1.0, (1.0 - recent_performance) / self.config.performance_drop_threshold),
@@ -278,7 +307,7 @@ class CalibrationGovernor:
                 samples = self._regime_sample_counts[current_regime]
                 if samples >= self.config.min_samples_in_regime:
                     return self._create_decision(
-                        CalibrationDecision.CALIBRATE,
+                        CalibrationOutcome.CALIBRATE,
                         CalibrationTrigger.REGIME_CHANGE,
                         f"Regime change with sufficient samples ({samples} >= {self.config.min_samples_in_regime})",
                         confidence=min(1.0, samples / self.config.min_samples_in_regime),
@@ -286,7 +315,7 @@ class CalibrationGovernor:
                     )
                 else:
                     return self._create_decision(
-                        CalibrationDecision.DEFER,
+                        CalibrationOutcome.DEFER,
                         CalibrationTrigger.REGIME_CHANGE,
                         f"Regime change but insufficient samples ({samples} < {self.config.min_samples_in_regime})",
                         confidence=0.5,
@@ -294,7 +323,7 @@ class CalibrationGovernor:
                     )
             else:
                 return self._create_decision(
-                    CalibrationDecision.CALIBRATE,
+                    CalibrationOutcome.CALIBRATE,
                     CalibrationTrigger.REGIME_CHANGE,
                     "Regime change detected",
                     confidence=0.8
@@ -302,7 +331,7 @@ class CalibrationGovernor:
 
         # No triggers met - skip
         return self._create_decision(
-            CalibrationDecision.SKIP,
+            CalibrationOutcome.SKIP,
             None,
             f"No triggers met (drift={current_drift:.3f}, perf={recent_performance:.3f}, regime_changed={regime_changed})",
             confidence=0.7,
@@ -316,7 +345,7 @@ class CalibrationGovernor:
 
     def _create_decision(
         self,
-        decision: CalibrationDecision,
+        decision: CalibrationOutcome,
         trigger: Optional[CalibrationTrigger],
         reason: str,
         confidence: float,
@@ -334,7 +363,7 @@ class CalibrationGovernor:
         self._decision_history.append(cal_decision)
 
         # Log decision
-        log_level = logging.INFO if decision == CalibrationDecision.SKIP else logging.WARNING
+        log_level = logging.INFO if decision == CalibrationOutcome.SKIP else logging.WARNING
         logger.log(log_level, f"[GOVERNOR] {decision.value}: {reason}")
 
         return cal_decision

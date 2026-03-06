@@ -162,4 +162,4 @@ Current limitation: the daily shadow/scoreboard/promotion/veto/runbook path is w
 - [ ] Add smoke scripts that produce real artifacts and fail on missing evidence.
 - [ ] Require artifact paths and reports for every milestone, not verbal claims.
 - [ ] Stop any QA path that invents fallback numbers or fake losses.
-- [ ] Track remaining blockers by repo with owners and next artifact, not generic status labels.
+- [x] Track remaining blockers by repo with owners and next artifact, not generic status labels.

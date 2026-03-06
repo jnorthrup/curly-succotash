@@ -20,7 +20,7 @@ from typing import Dict, Any
 
 import numpy as np
 
-from backend.src.calibration_sweep import (
+from src.calibration_sweep import (
     CalibrationSweepConfig,
     CalibrationMetrics,
     CalibrationSweeper,
@@ -30,7 +30,7 @@ from backend.src.calibration_sweep import (
     run_calibration_sweep,
     CalibrationMetric,
 )
-from backend.src.models import Timeframe
+from src.models import Timeframe
 
 
 class TestCalibrationSweepConfig:
