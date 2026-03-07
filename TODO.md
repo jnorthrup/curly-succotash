@@ -52,7 +52,7 @@ Current limitation: the daily shadow/scoreboard/promotion/veto/runbook path is w
 - [ ] Sweep calibration sensitivity for `--min-scale`, confidence bins, and sample windows.
 - [x] Add veto reason report automation and alerting.
 - [x] Add a canonical regime manifest with mandatory coverage policy.
-- [ ] Strengthen OOS calibration split policy to explicit regime and time windows.
+- [x] Strengthen OOS calibration split policy to explicit regime and time windows.
 - [ ] Add calibration governor cadence and trigger policy instead of running every cycle.
 - [ ] Add confidence calibration, not just move-magnitude calibration.
 - [ ] Add regime-aware threshold scheduling.

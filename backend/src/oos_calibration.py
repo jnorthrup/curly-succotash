@@ -25,7 +25,7 @@ Example:
 import json
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone, timedelta
 from enum import Enum
 from pathlib import Path
@@ -44,6 +44,44 @@ class SplitType(str, Enum):
     CALIBRATION = "calibration"
     TEST = "test"
     OOS = "out_of_sample"
+
+
+@dataclass(frozen=True)
+class TimeWindow:
+    """Inclusive time window for a split."""
+    start_time: datetime
+    end_time: datetime
+
+    def __post_init__(self):
+        if self.start_time >= self.end_time:
+            raise ValueError("time window start_time must be before end_time")
+
+    def to_dict(self) -> Dict[str, str]:
+        return {
+            "start_time": self.start_time.isoformat(),
+            "end_time": self.end_time.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]) -> "TimeWindow":
+        return cls(
+            start_time=datetime.fromisoformat(config["start_time"]),
+            end_time=datetime.fromisoformat(config["end_time"]),
+        )
+
+
+@dataclass(frozen=True)
+class RegimeRequirement:
+    """Explicit regime coverage requirement for governance."""
+    regime: str
+    min_samples: int = 1
+
+    def __post_init__(self):
+        if self.min_samples < 1:
+            raise ValueError("regime requirement min_samples must be >= 1")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass
@@ -119,6 +157,10 @@ class OOSplitPolicy:
     no_future_leakage: bool = True
     min_samples_per_regime: int = 100
     regime_balance_tolerance: float = 0.2  # 20% tolerance
+    train_window: Optional[TimeWindow] = None
+    calibration_window: Optional[TimeWindow] = None
+    test_window: Optional[TimeWindow] = None
+    required_regimes: List[RegimeRequirement] = field(default_factory=list)
 
     def __post_init__(self):
         """Validate policy configuration."""
@@ -132,9 +174,21 @@ class OOSplitPolicy:
         if not 0.0 <= self.regime_balance_tolerance <= 1.0:
             raise ValueError("regime_balance_tolerance must be in [0.0, 1.0]")
 
+        explicit_windows = [
+            self.train_window,
+            self.calibration_window,
+            self.test_window,
+        ]
+        if any(window is not None for window in explicit_windows):
+            if not all(window is not None for window in explicit_windows):
+                raise ValueError(
+                    "train_window, calibration_window, and test_window must all be set together"
+                )
+            self._validate_explicit_windows()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert policy to dictionary."""
-        return {
+        payload = {
             "train_ratio": self.train_ratio,
             "calibration_ratio": self.calibration_ratio,
             "test_ratio": self.test_ratio,
@@ -144,11 +198,24 @@ class OOSplitPolicy:
             "no_future_leakage": self.no_future_leakage,
             "min_samples_per_regime": self.min_samples_per_regime,
             "regime_balance_tolerance": self.regime_balance_tolerance,
+            "required_regimes": [requirement.to_dict() for requirement in self.required_regimes],
         }
+        if self.train_window is not None:
+            payload["train_window"] = self.train_window.to_dict()
+            payload["calibration_window"] = self.calibration_window.to_dict()
+            payload["test_window"] = self.test_window.to_dict()
+        return payload
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any]) -> "OOSplitPolicy":
         """Create policy from dictionary."""
+        required_regimes = [
+            RegimeRequirement(
+                regime=requirement["regime"],
+                min_samples=requirement.get("min_samples", 1),
+            )
+            for requirement in config.get("required_regimes", [])
+        ]
         return cls(
             train_ratio=config.get("train_ratio", 0.6),
             calibration_ratio=config.get("calibration_ratio", 0.2),
@@ -159,6 +226,10 @@ class OOSplitPolicy:
             no_future_leakage=config.get("no_future_leakage", True),
             min_samples_per_regime=config.get("min_samples_per_regime", 100),
             regime_balance_tolerance=config.get("regime_balance_tolerance", 0.2),
+            train_window=TimeWindow.from_dict(config["train_window"]) if config.get("train_window") else None,
+            calibration_window=TimeWindow.from_dict(config["calibration_window"]) if config.get("calibration_window") else None,
+            test_window=TimeWindow.from_dict(config["test_window"]) if config.get("test_window") else None,
+            required_regimes=required_regimes,
         )
 
     @classmethod
@@ -173,6 +244,14 @@ class OOSplitPolicy:
         with open(filepath, 'w') as f:
             json.dump(self.to_dict(), f, indent=2)
         logger.info(f"[OOSPLIT] Policy saved to {filepath}")
+
+    def _validate_explicit_windows(self) -> None:
+        if self.train_window.end_time >= self.calibration_window.start_time:
+            raise ValueError("train_window must end before calibration_window starts")
+        if self.calibration_window.end_time >= self.test_window.start_time:
+            raise ValueError("calibration_window must end before test_window starts")
+        if self.no_future_leakage and self.train_window.end_time >= self.test_window.start_time:
+            raise ValueError("explicit split windows must not overlap")
 
 
 class OOSplitter:
@@ -239,6 +318,9 @@ class OOSplitter:
         if end_time is None:
             end_time = sorted_data[-1].timestamp
 
+        if self.policy.train_window is not None:
+            return self._create_explicit_window_splits(sorted_data, sorted_regimes)
+
         # Calculate split indices
         n = len(sorted_data)
         train_end_idx = int(n * self.policy.train_ratio)
@@ -302,6 +384,42 @@ class OOSplitter:
 
         return result
 
+    def _create_explicit_window_splits(
+        self,
+        data: List[Candle],
+        regime_labels: List[str],
+    ) -> SplitResult:
+        train_split = self._create_split_from_window(
+            SplitType.TRAIN,
+            self.policy.train_window,
+            data,
+            regime_labels,
+        )
+        calibration_split = self._create_split_from_window(
+            SplitType.CALIBRATION,
+            self.policy.calibration_window,
+            data,
+            regime_labels,
+        )
+        test_split = self._create_split_from_window(
+            SplitType.TEST,
+            self.policy.test_window,
+            data,
+            regime_labels,
+        )
+
+        self._validate_required_regimes(train_split)
+        self._validate_required_regimes(calibration_split)
+        self._validate_required_regimes(test_split)
+
+        return SplitResult(
+            train=train_split,
+            calibration=calibration_split,
+            test=test_split,
+            policy=self.policy,
+            warnings=self._warnings,
+        )
+
     def create_time_based_splits(
         self,
         data: List[Candle],
@@ -324,6 +442,9 @@ class OOSplitter:
 
         if len(data) != len(regime_labels):
             raise ValueError("data and regime_labels must have same length")
+
+        if train_end_time >= cal_end_time:
+            raise ValueError("train_end_time must be before cal_end_time")
 
         # Sort by timestamp
         sorted_indices = np.argsort([c.timestamp for c in data])
@@ -370,6 +491,29 @@ class OOSplitter:
             policy=self.policy,
             warnings=self._warnings,
         )
+
+    def _create_split_from_window(
+        self,
+        split_type: SplitType,
+        window: TimeWindow,
+        data: List[Candle],
+        regime_labels: List[str],
+    ) -> DataSplit:
+        window_data: List[Candle] = []
+        window_regimes: List[str] = []
+        for candle, regime in zip(data, regime_labels):
+            if window.start_time <= candle.timestamp <= window.end_time:
+                window_data.append(candle)
+                window_regimes.append(regime)
+
+        if not window_data:
+            raise ValueError(f"No data in {split_type.value} split window")
+
+        self._validate_regime_coverage(window_data, window_regimes, split_type)
+        split = self._create_data_split(split_type, window_data, window_regimes)
+        if split.start_time < window.start_time or split.end_time > window.end_time:
+            raise ValueError(f"{split_type.value} split escaped its explicit time window")
+        return split
 
     def _create_data_split(
         self,
@@ -469,6 +613,22 @@ class OOSplitter:
         balanced_regimes = [regimes[i] for i in selected_indices]
 
         return balanced_data, balanced_regimes
+
+    def _validate_required_regimes(self, split: DataSplit) -> None:
+        if not self.policy.required_regimes:
+            return
+
+        counts: Dict[str, int] = {}
+        for regime in split.regime_labels:
+            counts[regime] = counts.get(regime, 0) + 1
+
+        for requirement in self.policy.required_regimes:
+            observed = counts.get(requirement.regime, 0)
+            if observed < requirement.min_samples:
+                self._warnings.append(
+                    f"{split.split_type.value} split missing required regime "
+                    f"'{requirement.regime}' samples: {observed}/{requirement.min_samples}"
+                )
 
 
 def create_oosplitter(

@@ -22,9 +22,11 @@ import numpy as np
 from src.oos_calibration import (
     OOSplitPolicy,
     OOSplitter,
+    RegimeRequirement,
     SplitResult,
     DataSplit,
     SplitType,
+    TimeWindow,
     create_oosplitter,
     create_oos_splits,
 )
@@ -112,26 +114,68 @@ class TestOOSplitPolicy:
 
     def test_to_dict(self):
         """Test policy serialization."""
-        policy = OOSplitPolicy()
+        start_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        policy = OOSplitPolicy(
+            train_window=TimeWindow(start_time, start_time + timedelta(days=30)),
+            calibration_window=TimeWindow(start_time + timedelta(days=31), start_time + timedelta(days=45)),
+            test_window=TimeWindow(start_time + timedelta(days=46), start_time + timedelta(days=60)),
+            required_regimes=[RegimeRequirement("REGIME_0", min_samples=10)],
+        )
         policy_dict = policy.to_dict()
 
         assert "train_ratio" in policy_dict
         assert "calibration_ratio" in policy_dict
         assert "test_ratio" in policy_dict
         assert "min_regimes_per_split" in policy_dict
+        assert policy_dict["train_window"]["start_time"] == start_time.isoformat()
+        assert policy_dict["required_regimes"][0]["regime"] == "REGIME_0"
 
     def test_from_dict(self):
         """Test policy deserialization."""
+        start_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         config = {
             "train_ratio": 0.7,
             "calibration_ratio": 0.2,
             "test_ratio": 0.1,
             "min_regimes_per_split": 3,
+            "train_window": {
+                "start_time": start_time.isoformat(),
+                "end_time": (start_time + timedelta(days=30)).isoformat(),
+            },
+            "calibration_window": {
+                "start_time": (start_time + timedelta(days=31)).isoformat(),
+                "end_time": (start_time + timedelta(days=45)).isoformat(),
+            },
+            "test_window": {
+                "start_time": (start_time + timedelta(days=46)).isoformat(),
+                "end_time": (start_time + timedelta(days=60)).isoformat(),
+            },
+            "required_regimes": [{"regime": "REGIME_2", "min_samples": 5}],
         }
 
         policy = OOSplitPolicy.from_dict(config)
         assert policy.train_ratio == 0.7
         assert policy.min_regimes_per_split == 3
+        assert policy.train_window.start_time == start_time
+        assert policy.required_regimes[0].regime == "REGIME_2"
+
+    def test_explicit_windows_require_full_set(self):
+        start_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+        with pytest.raises(ValueError, match="must all be set together"):
+            OOSplitPolicy(
+                train_window=TimeWindow(start_time, start_time + timedelta(days=10)),
+            )
+
+    def test_explicit_windows_must_not_overlap(self):
+        start_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+        with pytest.raises(ValueError, match="must end before calibration_window starts"):
+            OOSplitPolicy(
+                train_window=TimeWindow(start_time, start_time + timedelta(days=10)),
+                calibration_window=TimeWindow(start_time + timedelta(days=10), start_time + timedelta(days=20)),
+                test_window=TimeWindow(start_time + timedelta(days=21), start_time + timedelta(days=30)),
+            )
 
     def test_from_json(self):
         """Test loading policy from JSON file."""
@@ -336,6 +380,52 @@ class TestOOSplitter:
         assert isinstance(result, SplitResult)
         assert result.train.end_time <= train_end
         assert result.calibration.end_time <= cal_end
+
+    def test_create_time_based_splits_rejects_reversed_boundaries(self):
+        data, regimes = create_synthetic_data(n_samples=300, n_regimes=3)
+        splitter = OOSplitter(OOSplitPolicy())
+
+        with pytest.raises(ValueError, match="train_end_time must be before cal_end_time"):
+            splitter.create_time_based_splits(
+                data,
+                regimes,
+                train_end_time=data[0].timestamp + timedelta(hours=250),
+                cal_end_time=data[0].timestamp + timedelta(hours=200),
+            )
+
+    def test_create_splits_with_explicit_windows(self):
+        data, regimes = create_synthetic_data(n_samples=240, n_regimes=3)
+        base = data[0].timestamp
+        policy = OOSplitPolicy(
+            min_regimes_per_split=1,
+            min_samples_per_regime=1,
+            train_window=TimeWindow(base, base + timedelta(hours=79)),
+            calibration_window=TimeWindow(base + timedelta(hours=80), base + timedelta(hours=159)),
+            test_window=TimeWindow(base + timedelta(hours=160), base + timedelta(hours=239)),
+        )
+
+        result = OOSplitter(policy).create_splits(data, regimes)
+
+        assert result.train.start_time == base
+        assert result.train.end_time <= policy.train_window.end_time
+        assert result.calibration.start_time >= policy.calibration_window.start_time
+        assert result.test.start_time >= policy.test_window.start_time
+
+    def test_required_regimes_emit_warning_when_missing_from_window(self):
+        data, regimes = create_synthetic_data(n_samples=240, n_regimes=3)
+        base = data[0].timestamp
+        policy = OOSplitPolicy(
+            min_regimes_per_split=1,
+            min_samples_per_regime=1,
+            train_window=TimeWindow(base, base + timedelta(hours=79)),
+            calibration_window=TimeWindow(base + timedelta(hours=80), base + timedelta(hours=159)),
+            test_window=TimeWindow(base + timedelta(hours=160), base + timedelta(hours=239)),
+            required_regimes=[RegimeRequirement("REGIME_2", min_samples=5)],
+        )
+
+        result = OOSplitter(policy).create_splits(data, regimes)
+
+        assert any("missing required regime 'REGIME_2'" in warning for warning in result.warnings)
 
     def test_create_time_based_splits_no_data(self):
         """Test time-based splits with empty splits."""
