@@ -367,6 +367,10 @@ class OOSplitter:
             SplitType.TEST, test_data, test_regimes
         )
 
+        self._validate_required_regimes(train_split)
+        self._validate_required_regimes(cal_split)
+        self._validate_required_regimes(test_split)
+
         result = SplitResult(
             train=train_split,
             calibration=cal_split,
@@ -483,6 +487,10 @@ class OOSplitter:
         train_split = self._create_data_split(SplitType.TRAIN, train_data, train_regimes)
         cal_split = self._create_data_split(SplitType.CALIBRATION, cal_data, cal_regimes)
         test_split = self._create_data_split(SplitType.TEST, test_data, test_regimes)
+
+        self._validate_required_regimes(train_split)
+        self._validate_required_regimes(cal_split)
+        self._validate_required_regimes(test_split)
 
         return SplitResult(
             train=train_split,

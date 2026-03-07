@@ -427,6 +427,42 @@ class TestOOSplitter:
 
         assert any("missing required regime 'REGIME_2'" in warning for warning in result.warnings)
 
+    def test_required_regimes_emit_warning_for_ratio_splits(self):
+        data, regimes = create_synthetic_data(n_samples=300, n_regimes=3)
+        policy = OOSplitPolicy(
+            min_regimes_per_split=1,
+            min_samples_per_regime=1,
+            required_regimes=[RegimeRequirement("REGIME_2", min_samples=5)],
+        )
+
+        result = OOSplitter(policy).create_splits(data, regimes)
+
+        assert any(
+            "train split missing required regime 'REGIME_2'" in warning
+            for warning in result.warnings
+        )
+
+    def test_required_regimes_emit_warning_for_time_based_splits(self):
+        data, regimes = create_synthetic_data(n_samples=240, n_regimes=3)
+        policy = OOSplitPolicy(
+            min_regimes_per_split=1,
+            min_samples_per_regime=1,
+            required_regimes=[RegimeRequirement("REGIME_2", min_samples=5)],
+        )
+        splitter = OOSplitter(policy)
+
+        result = splitter.create_time_based_splits(
+            data,
+            regimes,
+            train_end_time=data[0].timestamp + timedelta(hours=79),
+            cal_end_time=data[0].timestamp + timedelta(hours=159),
+        )
+
+        assert any(
+            "train split missing required regime 'REGIME_2'" in warning
+            for warning in result.warnings
+        )
+
     def test_create_time_based_splits_no_data(self):
         """Test time-based splits with empty splits."""
         data, regimes = create_synthetic_data(n_samples=100, n_regimes=1)
