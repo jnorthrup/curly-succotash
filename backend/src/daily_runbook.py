@@ -165,7 +165,7 @@ class DailyRunbookGenerator:
             Complete runbook dictionary
         """
         if date is None:
-            date = datetime.now(timezone.utc)
+            date = self._infer_report_date(simulator, shadow_engine)
 
         date_str = date.strftime("%Y-%m-%d")
 
@@ -220,6 +220,35 @@ class DailyRunbookGenerator:
         }
 
         return runbook
+
+    def _infer_report_date(
+        self,
+        simulator: Any,
+        shadow_engine: Any,
+    ) -> datetime:
+        """Use the latest observed trade activity as the default report date."""
+        candidate_timestamps: List[datetime] = []
+
+        paper_engine = getattr(simulator, "paper_engine", None)
+        if paper_engine:
+            for trade in paper_engine.get_completed_trades():
+                timestamp = self._trade_timestamp(trade)
+                if timestamp is not None:
+                    candidate_timestamps.append(timestamp)
+
+        for trade in list(getattr(shadow_engine, "shadow_trades", []) or []):
+            timestamp = getattr(trade, "timestamp", None)
+            if timestamp is not None:
+                candidate_timestamps.append(timestamp)
+
+        if not candidate_timestamps:
+            return datetime.now(timezone.utc)
+
+        latest_timestamp = max(
+            ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            for ts in candidate_timestamps
+        )
+        return latest_timestamp.astimezone(timezone.utc)
 
     def _collect_snapshot(
         self,
