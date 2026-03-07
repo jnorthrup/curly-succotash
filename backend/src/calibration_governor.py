@@ -184,6 +184,7 @@ class CalibrationGovernor:
         self._decision_history: List[CalibrationDecision] = []
         self._last_calibration_time: Optional[datetime] = None
         self._regime_sample_counts: Dict[str, int] = {}
+        self._initial_calibration_triggered: bool = False  # Track if initial calibration has been triggered
 
     def should_recalibrate(
         self,
@@ -237,10 +238,26 @@ class CalibrationGovernor:
             CalibrationDecision with decision and reason
         """
         now = current_time or datetime.now(timezone.utc)
-        self._last_calibration_time = last_calibration_time
+        
+        # Only update _last_calibration_time if a valid time is passed.
+        # This prevents recalibration from being treated as perpetual initial calibration
+        # when last_calibration_time=None is passed but we already have a recorded time.
+        if last_calibration_time is not None:
+            self._last_calibration_time = last_calibration_time
 
         # Check if this is initial calibration
         if last_calibration_time is None:
+            # If we've already triggered initial calibration but haven't recorded it,
+            # return SKIP to avoid repeated CALIBRATE responses (bounded runtime behavior)
+            if self._initial_calibration_triggered:
+                return self._create_decision(
+                    CalibrationOutcome.SKIP,
+                    CalibrationTrigger.INITIAL,
+                    "Initial calibration already triggered, waiting for record_calibration",
+                    confidence=1.0
+                )
+            # First time seeing None - trigger initial calibration
+            self._initial_calibration_triggered = True
             return self._create_decision(
                 CalibrationOutcome.CALIBRATE,
                 CalibrationTrigger.INITIAL,
@@ -377,6 +394,9 @@ class CalibrationGovernor:
         if calibration_time is None:
             calibration_time = datetime.now(timezone.utc)
         self._last_calibration_time = calibration_time
+        
+        # Reset the initial calibration triggered flag since calibration is now recorded
+        self._initial_calibration_triggered = False
 
         # Reset regime sample counts
         self._regime_sample_counts.clear()

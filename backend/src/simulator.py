@@ -186,6 +186,9 @@ class CoinbaseTradingSimulator:
         from .calibration_governor import CalibrationOutcome
         if decision.decision == CalibrationOutcome.CALIBRATE:
             logger.info(f"[CALIBRATION] Recalibration triggered: {decision.reason}")
+            # Record that calibration was performed so subsequent polls
+            # don't keep returning CALIBRATE (bounded runtime behavior)
+            self.calibration_governor.record_calibration(candle.timestamp)
             # In a real implementation, this would trigger a background task
             # to run the calibration sweep and update models.
 
