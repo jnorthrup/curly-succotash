@@ -616,7 +616,7 @@ class CalibrationSweeper:
             parameter_name=parameter_name,
             sensitivity_score=max_slope,
             optimal_range=(min(optimal_values), max(optimal_values)),
-            robust=robust,
+            robust=bool(robust),
         )
 
 

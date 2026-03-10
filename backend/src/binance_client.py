@@ -32,6 +32,7 @@ class BinanceArchiveConfig:
     start_month: str = "2026-01"
     symbols: List[str] = None
     timeframes: List[str] = None
+    strict_checksum: bool = True
 
     def __post_init__(self):
         if self.symbols is None:

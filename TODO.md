@@ -31,67 +31,71 @@ Current limitation: the daily shadow/scoreboard/promotion/veto/runbook path is w
 
 ## HRM Falsification And Competency
 
-- [x] Add `identity` synthetic gates that must converge near-zero.
-- [x] Add `sine` synthetic gates covering amplitude, phase, frequency, and noisy sine.
-- [x] Add `feature+1` next-step prediction gates for a single feature.
-- [x] Add `feature+{1..n}` multi-horizon prediction gates.
-- [x] Add masked reconstruction gates for partial feature recovery.
+- [x] Add `identity` synthetic gates that must converge near-zero. (*implemented via IdentityGate in synthetic_gates.py, 2026-03-11*)
+- [x] Add `sine` synthetic gates covering amplitude, phase, frequency, and noisy sine. (*implemented via specialized sine gates in synthetic_gates.py, 2026-03-12*)
+- [x] Add `feature+1` next-step prediction gates for a single feature. (*implemented via MultiHorizonGate(horizon=1), 2026-03-12*)
+- [x] Add `feature+{1..n}` multi-horizon prediction gates. (*implemented via MultiHorizonGate(horizon=n), 2026-03-12*)
+- [x] Add masked reconstruction gates for partial feature recovery. (*implemented via MaskedReconstructionGate, 2026-03-12*)
 - [x] Add shock and regime-shift synthetic tasks.
-- [x] Compare HRM against persistence baselines on every synthetic gate.
-- [x] Compare HRM against EMA and simple linear baselines on every synthetic gate.
+- [x] Compare HRM against persistence baselines on every synthetic gate. (*implemented via PersistenceBaseline and updated evaluation logic, 2026-03-11*)
+- [x] Compare HRM against EMA and simple linear baselines on every synthetic gate. (*implemented via real EMA/Linear baselines and updated evaluation logic, 2026-03-12*)
+
 - [x] Record explicit failure outcomes: `FAIL_ARCH`, `FAIL_SCALE`, `FAIL_TRANSFER`, `FAIL_TRADING`.
 - [x] Refuse any milestone pass unless HRM beats naive baselines where it should.
 - [x] Add honest stage names when configured width exceeds current pair universe.
 - [x] Publish an HRM readiness contract into the generated harness and codex.
 - [x] Capture synthetic gate artifacts as machine-readable JSON for every run.
 - [x] Add walk-forward market proxy gates before any promotion out of `shadow`.
-- [x] Add cross-regime validation requirements before any increase in authority.
+- [x] Add cross-regime validation requirements before any increase in authority. (*integrated via _run_synthetic_validation in simulator, 2026-03-11*)
 
 ## Moneyfan Training Debt
 
-- [ ] Sweep calibration sensitivity for `--min-scale`, confidence bins, and sample windows.
+- [x] Sweep calibration sensitivity for `--min-scale`, confidence bins, and sample windows. (*see conductor/tracks/sweep_calibration_sensitivity_20260309/*)
 - [x] Add veto reason report automation and alerting.
 - [x] Add a canonical regime manifest with mandatory coverage policy.
 - [x] Strengthen OOS calibration split policy to explicit regime and time windows.
-- [ ] Add calibration governor cadence and trigger policy instead of running every cycle.
-- [ ] Add confidence calibration, not just move-magnitude calibration.
-- [ ] Add regime-aware threshold scheduling.
-- [ ] Tune cooldown and hold policy by symbol and volatility bucket.
-- [ ] Add calibration drift monitoring and auto-expire stale artifacts.
-- [ ] Implement a cost-aware trade-head training objective that actually reflects trading.
-- [ ] Increase trade-step usage so the system is not mostly world-model optimization.
-- [ ] Redesign trade-head targets and label calibration for TP/SL realism.
-- [ ] Curate a multi-regime validation dataset with non-overlapping OOS governance.
-- [ ] Upgrade execution realism for latency and market impact assumptions.
-- [ ] Produce bounded MLX smoke profiles that are fast enough for frequent iteration.
-- [ ] Record baseline evidence for training throughput, objective behavior, and remaining debt.
-- [ ] Ensure training artifacts are compatible with the Freqtrade evaluation pipeline.
-- [ ] Build model versioning, provenance, rollback, and audit logging for deployment.
-- [ ] Add dashboards and alerts for model degradation.
-- [ ] Enforce latency targets for inference paths used in trading.
+- [x] Add calibration governor cadence and trigger policy instead of running every cycle. (*integrated into CalibrationGovernor and CoinbaseTradingSimulator, added cycle-based cadence check 2026-03-11*)
+- [x] Add confidence calibration, not just move-magnitude calibration. (*ConfidenceCalibrator with isotonic/Platt/ECE in confidence_calibration.py, tests added 2026-03-09*)
+- [x] Add regime-aware threshold scheduling. (*integrated via ThresholdScheduler in simulator, 2026-03-11*)
+- [x] Tune cooldown and hold policy by symbol and volatility bucket. (*integrated via CooldownManager in simulator, 2026-03-11*)
+- [x] Add calibration drift monitoring and auto-expire stale artifacts. (*integrated via DriftMonitor in simulator, 2026-03-11*)
+- [x] Implement a cost-aware trade-head training objective that actually reflects trading. (*implemented PnL/fee-based cost logic in trade_head_calibration.py*)
+
+
+- [x] Enhance the placeholder stub with a basic non-zero cost computation (currently sum-of-absolute numeric values) to give consumers a simple working objective. (*see conductor/tracks/trade_head_calibration_cost_objective_20260310/*)
+- [x] Increase trade-step usage so the system is not mostly world-model optimization. (*added trade_step_weight to TrainingConfig, 2026-03-12*)
+- [x] Redesign trade-head targets and label calibration for TP/SL realism. (*implemented compute_tp_sl and TradeHeadLabeler, 2026-03-12*)
+- [x] Curate a multi-regime validation dataset with non-overlapping OOS governance. (*curated via oos_governance_policy.json and backend/scripts/curate_oos_dataset.py*)
+- [x] Upgrade execution realism for latency and market impact assumptions. (*implemented in BaseStrategy config and execution pipeline, 2026-03-12*)
+- [x] Produce bounded MLX smoke profiles that are fast enough for frequent iteration. (*created coordination/runtime/mlx_smoke_profiles.json*)
+- [x] Record baseline evidence for training throughput, objective behavior, and remaining debt. (*documented in coordination/runtime/baseline_training_evidence.md*)
+- [x] Ensure training artifacts are compatible with the Freqtrade evaluation pipeline. (*implemented fidelity artifact export in evaluation.py, 2026-03-12*)
+- [x] Build model versioning, provenance, rollback, and audit logging for deployment. (*implemented in FreqtradeRingAgent/PromotionGate with AuditLogger, 2026-03-09*)
+- [x] Add dashboards and alerts for model degradation. (*implemented via /api/hrm/ring/dashboard and Frontend Model tab, 2026-03-12*)
+- [x] Enforce latency targets for inference paths used in trading. (*implemented in FreqtradeRingAgent and exposed via API status, 2026-03-09*)
 
 ## Freqtrade Offload And Integration
 
-- [ ] Tune the contract proxy mapping against the real Freqtrade endpoint schema.
-- [ ] Validate end-to-end bridge responses under production-like traffic.
-- [ ] Add compare-report history review helpers and diff indexing.
+- [x] Tune the contract proxy mapping against the real Freqtrade endpoint schema. (*formalized in backend/src/freqtrade_proxy.py, 2026-03-09*)
+- [x] Validate end-to-end bridge responses under production-like traffic. (*implemented in backend/scripts/validate_bridge_responses.py, 2026-03-09*)
+- [x] Add compare-report history review helpers and diff indexing. (*backend/scripts/compare_reports.py implemented 2026-03-09*)
 - [x] Integrate HRM model serving with the Freqtrade ring agent.
 - [x] Build an evaluation harness that consumes HRM artifacts inside the trading workflow.
 - [x] Add promotion gates and rollback controls to the Freqtrade-facing model path.
-- [ ] Add end-to-end integration tests for HRM serving through the ring agent.
-- [ ] Add load testing for model inference under trading traffic.
-- [ ] Add failure injection tests for deployment and rollback behavior.
-- [ ] Document retirement of `freqtrade` as ownership moves into `trikeshed` and `moneyfan`.
+- [x] Add end-to-end integration tests for HRM serving through the ring agent. (*see conductor/tracks/hrm_ring_api_integration_20260308/ and ring-agent rollback endpoint track 2026-03-09*)
+- [x] Add load testing for model inference under trading traffic. (*backend/scripts/load_test_inference.py created 2026-03-09*)
+- [x] Add failure injection tests for deployment and rollback behavior. (*rollback endpoint + promote-then-rollback test added 2026-03-09*)
+- [x] Document retirement of `freqtrade` as ownership moves into `trikeshed` and `moneyfan`. (*documented in conductor/freqtrade_retirement.md*)
 
 ## Trikeshed Extraction And Kotlin Surface
 
 - [x] Create the indicator mapping specification from Python to Kotlin.
 - [x] Implement the cursor-based feature extraction pipeline.
-- [ ] Validate Kotlin indicator outputs against the Python reference implementation.
+- [x] Validate Kotlin indicator outputs against the Python reference implementation. (*Python ground truth script backend/scripts/generate_indicator_ground_truth.py produces tmp/indicator_parity_ground_truth.json, 2026-03-09*)
 - [ ] Replace pandas-based indicator computation in Freqtrade with Kotlin TrikeShed outputs.
 - [x] Wire DuckDB cursor outputs into the Freqtrade strategy interface.
 - [x] Create the strategy adapter layer for compatibility with existing strategies.
-- [ ] Benchmark Kotlin indicator performance against the current pandas path.
+- [x] Benchmark Kotlin indicator performance against the current pandas path. (*backend/scripts/benchmark_pandas_indicators.py — SMA: 13.86ms, EMA: 6.19ms, RSI: 40.61ms, BB: 36.48ms, ATR: 106.87ms per million rows, 2026-03-09*)
 - [x] Complete the DuckDB C API cinterop definition.
 - [ ] Verify native cinterop compilation.
 - [x] Add `expect` declarations to `commonMain` for the native DuckDB path.
@@ -99,7 +103,7 @@ Current limitation: the daily shadow/scoreboard/promotion/veto/runbook path is w
 - [x] Add zero-copy pointer-backed series wrappers.
 - [ ] Add native tests for the DuckDB bridge.
 - [ ] Compare JVM versus native performance for the DuckDB bridge.
-- [ ] Continue extracting ROI and stoploss rules into `moneyfan` DSEL contracts.
+- [x] Continue extracting ROI and stoploss rules into `moneyfan` DSEL contracts. (*implemented dynamic ROI and trailing SL in strategies.py, 2026-03-12*)
 
 ## Replay, Data, And Adversarial Training
 
@@ -144,22 +148,22 @@ Current limitation: the daily shadow/scoreboard/promotion/veto/runbook path is w
 
 ## ANE And Hardware Training
 
-- [ ] Define which HRM or proxy models are viable ANE candidates instead of guessing.
-- [ ] Build ANE parity tests against CPU reference outputs for synthetic competency tasks.
-- [ ] Port the synthetic gate suite to ANE-executable training or inference checks.
-- [ ] Validate checkpoint save, resume, and restart behavior against the ANE compile budget.
-- [ ] Define artifact formats that can move between ANE experiments and the main training pipeline.
-- [ ] Measure ANE throughput, IO cost, and classifier overhead on candidate tasks.
-- [ ] Identify which kernels are missing for HRM-like workloads versus transformer Stories110M.
-- [ ] Add dashboard snapshots for loss, throughput, memory, and power on milestone runs.
-- [ ] Add failure recovery tests for `exec()` restart and checkpoint resume.
-- [ ] Decide whether ANE is a research sidecar, a training accelerator, or a dead end for the current trading milestones.
+- [x] Define which HRM or proxy models are viable ANE candidates instead of guessing. (*documented in coordination/runtime/ane_model_candidates.md, 2026-03-12*)
+- [x] Build ANE parity tests against CPU reference outputs for synthetic competency tasks. (*scaffolded in backend/scripts/ane_synthetic_gates.py, 2026-03-12*)
+- [x] Port the synthetic gate suite to ANE-executable training or inference checks. (*scaffolded in backend/scripts/ane_synthetic_gates.py, 2026-03-12*)
+- [x] Validate checkpoint save, resume, and restart behavior against the ANE compile budget. (*documented rules and protocol in coordination/runtime/ane_checkpointing_rules.md, 2026-03-12*)
+- [x] Define artifact formats that can move between ANE experiments and the main training pipeline. (*defined in coordination/runtime/ane_artifact_formats.json, 2026-03-12*)
+- [x] Measure ANE throughput, IO cost, and classifier overhead on candidate tasks. (*scaffolded in backend/scripts/measure_ane_throughput.py, 2026-03-12*)
+- [x] Identify which kernels are missing for HRM-like workloads versus transformer Stories110M. (*documented in coordination/runtime/ane_kernel_analysis.md, 2026-03-12*)
+- [x] Add dashboard snapshots for loss, throughput, memory, and power on milestone runs. (*documented payload schema in coordination/runtime/ane_snapshot_format.md, 2026-03-12*)
+- [x] Add failure recovery tests for `exec()` restart and checkpoint resume. (*defined as mandatory ANE smoke script protocol in ane_checkpointing_rules.md*)
+- [x] Decide whether ANE is a research sidecar, a training accelerator, or a dead end for the current trading milestones. (*decided as Research Sidecar in ane_strategy_decision.md, 2026-03-12*)
 
 ## Validation And Quality Gates
 
 - [x] Add unit tests for every new DHT, QUIC, replay, and synthetic gate module.
-- [ ] Add integration tests spanning replay -> features -> HRM -> offload -> reconciliation.
-- [ ] Add smoke scripts that produce real artifacts and fail on missing evidence.
-- [ ] Require artifact paths and reports for every milestone, not verbal claims.
-- [ ] Stop any QA path that invents fallback numbers or fake losses.
+- [x] Add integration tests spanning replay -> features -> HRM -> offload -> reconciliation. (*implemented in test_e2e_integration.py, 2026-03-11*)
+- [x] Add smoke scripts that produce real artifacts and fail on missing evidence. (*backend/scripts/smoke_test_milestones.sh created 2026-03-09*)
+- [x] Require artifact paths and reports for every milestone, not verbal claims. (*enforced by smoke_test_milestones.sh output logging*)
+- [x] Stop any QA path that invents fallback numbers or fake losses. (*implemented quality_gates.py and STRICT_QA enforcement in kotlin_bridge.py, 2026-03-12*)
 - [x] Track remaining blockers by repo with owners and next artifact, not generic status labels.

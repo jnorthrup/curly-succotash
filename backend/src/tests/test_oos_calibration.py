@@ -19,7 +19,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from src.oos_calibration import (
+from backend.src.oos_calibration import (
     OOSplitPolicy,
     OOSplitter,
     RegimeRequirement,
@@ -30,7 +30,7 @@ from src.oos_calibration import (
     create_oosplitter,
     create_oos_splits,
 )
-from src.models import Candle, Timeframe
+from backend.src.models import Candle, Timeframe
 
 
 def create_synthetic_data(

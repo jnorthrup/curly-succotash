@@ -8,8 +8,11 @@ Supports incremental updates - only downloads missing months.
 """
 
 import csv
+import hashlib
 import io
 import logging
+import re
+import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,10 +78,46 @@ class ArchiveIngester:
         Returns:
             Full URL to the .zip file
         """
-        month_str = f"{year}-{month:02d}"
         filename = f"{symbol}-{timeframe}-{year}-{month:02d}.zip"
         url = f"{self.config.base_url}/{symbol}/{timeframe}/{filename}"
         return url
+
+    def _verify_checksum(self, data: bytes, url: str) -> bool:
+        """
+        Verify the SHA256 checksum of the downloaded data.
+
+        Args:
+            data: Raw downloaded bytes
+            url: URL of the .zip file
+
+        Returns:
+            True if checksum is valid or verification is disabled
+        """
+        if not hasattr(self.config, "strict_checksum") or not self.config.strict_checksum:
+            return True
+
+        checksum_url = f"{url}.CHECKSUM"
+        try:
+            response = self.session.get(checksum_url, timeout=30)
+            response.raise_for_status()
+
+            # Format: "<checksum>  <filename>"
+            content = response.text.strip()
+            expected_checksum = content.split()[0]
+
+            actual_checksum = hashlib.sha256(data).hexdigest()
+
+            if actual_checksum == expected_checksum:
+                logger.debug(f"[CHECKSUM] Verified successfully for {url}")
+                return True
+            else:
+                logger.error(f"[CHECKSUM] Failed for {url}: expected {expected_checksum}, got {actual_checksum}")
+                return False
+
+        except Exception as e:
+            logger.warning(f"[CHECKSUM] Could not fetch/verify checksum from {checksum_url}: {e}")
+            # If strict, this might be a failure, but typically we proceed if the file itself downloaded
+            return not self.config.strict_checksum
 
     def _download_monthly_file(
         self,
@@ -88,7 +127,7 @@ class ArchiveIngester:
         month: int
     ) -> Optional[bytes]:
         """
-        Download a single month's archive file.
+        Download a single month's archive file with retries.
 
         Uses streaming to handle large files efficiently.
 
@@ -104,49 +143,65 @@ class ArchiveIngester:
         url = self._build_url(symbol, timeframe, year, month)
         month_str = f"{year}-{month:02d}"
 
-        logger.info(f"[DOWNLOAD] Starting download for {symbol} {timeframe} {month_str}")
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            logger.info(f"[DOWNLOAD] Attempt {attempt}/{max_retries} for {symbol} {timeframe} {month_str}")
 
-        try:
-            response = self.session.get(url, timeout=120, stream=True)
-            response.raise_for_status()
-
-            # Stream download to handle large files
-            chunks = []
-            total_size = 0
-            chunk_size = 1024 * 1024  # 1MB chunks
-
-            for chunk in response.iter_content(chunk_size=chunk_size):
-                if chunk:
-                    chunks.append(chunk)
-                    total_size += len(chunk)
-                    if total_size % (10 * 1024 * 1024) == 0:  # Log every 10MB
-                        logger.debug(f"[DOWNLOAD] Downloaded {total_size / 1024 / 1024:.1f}MB...")
-
-            compressed_data = b"".join(chunks)
-            logger.info(f"[DOWNLOAD] Downloaded {total_size / 1024 / 1024:.1f}MB for {symbol} {timeframe} {month_str}")
-
-            # Extract CSV from ZIP
             try:
-                with zipfile.ZipFile(io.BytesIO(compressed_data)) as z:
-                    # Expecting only one CSV file in the ZIP
-                    csv_filename = z.namelist()[0]
-                    with z.open(csv_filename) as f:
-                        decompressed = f.read()
-                        logger.info(f"[DOWNLOAD] Extracted {csv_filename}, size {len(decompressed) / 1024 / 1024:.1f}MB")
-                        return decompressed
-            except zipfile.BadZipFile:
-                logger.error(f"[ERROR] Invalid ZIP file for {symbol} {timeframe} {month_str}")
-                return None
+                response = self.session.get(url, timeout=120, stream=True)
+                response.raise_for_status()
 
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
-                logger.warning(f"[DOWNLOAD] File not found (404): {url}")
-            else:
+                # Stream download to handle large files
+                chunks = []
+                total_size = 0
+                chunk_size = 1024 * 1024  # 1MB chunks
+
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        chunks.append(chunk)
+                        total_size += len(chunk)
+
+                compressed_data = b"".join(chunks)
+                logger.info(f"[DOWNLOAD] Downloaded {total_size / 1024 / 1024:.1f}MB for {symbol} {timeframe} {month_str}")
+
+                # Verify checksum
+                if not self._verify_checksum(compressed_data, url):
+                    if attempt < max_retries:
+                        time.sleep(2 ** attempt)
+                        continue
+                    return None
+
+                # Extract CSV from ZIP
+                try:
+                    with zipfile.ZipFile(io.BytesIO(compressed_data)) as z:
+                        # Expecting only one CSV file in the ZIP
+                        csv_filename = z.namelist()[0]
+                        with z.open(csv_filename) as f:
+                            decompressed = f.read()
+                            logger.info(f"[DOWNLOAD] Extracted {csv_filename}, size {len(decompressed) / 1024 / 1024:.1f}MB")
+                            return decompressed
+                except zipfile.BadZipFile:
+                    logger.error(f"[ERROR] Invalid ZIP file for {symbol} {timeframe} {month_str}")
+                    if attempt < max_retries:
+                        time.sleep(2 ** attempt)
+                        continue
+                    return None
+
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 404:
+                    logger.warning(f"[DOWNLOAD] File not found (404): {url}")
+                    return None
                 logger.error(f"[ERROR] HTTP error downloading {url}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"[ERROR] Failed to download {url}: {e}")
-            return None
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+                    continue
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to download {url}: {e}")
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)
+                    continue
+
+        return None
 
     def _parse_csv_to_candles(
         self,
@@ -185,11 +240,18 @@ class ArchiveIngester:
         try:
             # Decode and parse CSV
             csv_text = csv_data.decode('utf-8')
+            
+            # Apply price string cleanup: remove trailing zeros after decimal point before a comma or end of line
+            # Inspired by sed: 's/(\.[0-9]+)0+,/\1,/g'
+            csv_text = re.sub(r'(\.[0-9]+)0+(,|$)', r'\1\2', csv_text)
+            
             csv_reader = csv.reader(io.StringIO(csv_text))
 
             for row in csv_reader:
-                if len(row) < 6:
-                    continue  # Skip incomplete rows
+                # Handle cases where the number of columns is exactly 11 or 12
+                # (ignoring the last one if 12)
+                if len(row) < 11:
+                    continue
 
                 try:
                     # Parse timestamp (Binance uses milliseconds)
@@ -298,6 +360,7 @@ class ArchiveIngester:
         timeframe: str,
         start_date: datetime,
         end_date: Optional[datetime] = None,
+        dry_run: bool = False,
     ) -> Tuple[int, int]:
         """
         Ingest data for a specific symbol and timeframe.
@@ -309,6 +372,7 @@ class ArchiveIngester:
             timeframe: Timeframe string (e.g., "1h")
             start_date: Start date for ingestion
             end_date: End date for ingestion (defaults to current month)
+            dry_run: If True, only log what would be downloaded
 
         Returns:
             Tuple of (total_candles_downloaded, total_candles_inserted)
@@ -316,7 +380,7 @@ class ArchiveIngester:
         if end_date is None:
             end_date = datetime.now(timezone.utc)
 
-        logger.info(f"[INGEST] Starting ingestion for {symbol} {timeframe} from {start_date} to {end_date}")
+        logger.info(f"[INGEST] Starting ingestion for {symbol} {timeframe} from {start_date} to {end_date} (dry_run={dry_run})")
 
         total_downloaded = 0
         total_inserted = 0
@@ -332,25 +396,29 @@ class ArchiveIngester:
             if self.client.has_data(symbol, timeframe_enum, current_year, current_month):
                 logger.info(f"[INGEST] Data already exists for {symbol} {timeframe} {month_str}, skipping")
             else:
-                logger.info(f"[INGEST] Downloading {symbol} {timeframe} {month_str}")
-
-                # Download
-                csv_data = self._download_monthly_file(symbol, timeframe, current_year, current_month)
-
-                if csv_data:
-                    # Parse
-                    candles = self._parse_csv_to_candles(csv_data, symbol, timeframe)
-                    total_downloaded += len(candles)
-
-                    if candles:
-                        # Insert
-                        inserted = self._insert_candles(candles, timeframe)
-                        total_inserted += inserted
-
-                        # Cache the file if desired
-                        self._cache_file(symbol, timeframe, current_year, current_month, csv_data)
+                if dry_run:
+                    url = self._build_url(symbol, timeframe, current_year, current_month)
+                    logger.info(f"[DRY-RUN] Would download: {url}")
                 else:
-                    logger.warning(f"[INGEST] No data available for {symbol} {timeframe} {month_str}")
+                    logger.info(f"[INGEST] Downloading {symbol} {timeframe} {month_str}")
+
+                    # Download
+                    csv_data = self._download_monthly_file(symbol, timeframe, current_year, current_month)
+
+                    if csv_data:
+                        # Parse
+                        candles = self._parse_csv_to_candles(csv_data, symbol, timeframe)
+                        total_downloaded += len(candles)
+
+                        if candles:
+                            # Insert
+                            inserted = self._insert_candles(candles, timeframe)
+                            total_inserted += inserted
+
+                            # Cache the file if desired
+                            self._cache_file(symbol, timeframe, current_year, current_month, csv_data)
+                    else:
+                        logger.warning(f"[INGEST] No data available for {symbol} {timeframe} {month_str}")
 
             # Move to next month
             if current_month == 12:

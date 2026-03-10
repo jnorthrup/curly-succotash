@@ -56,14 +56,20 @@ class RegimeThresholdConfig:
 class ThresholdScheduler:
     """Select and adjust thresholds based on regime."""
 
-    def __init__(self, threshold_configs: List[RegimeThresholdConfig]):
+    def __init__(
+        self, 
+        threshold_configs: List[RegimeThresholdConfig],
+        strategy: str = "restrictive"  # "restrictive" or "average"
+    ):
         """Initialize scheduler.
 
         Args:
             threshold_configs: List of regime-specific threshold configs
+            strategy: Strategy for merging multiple regimes
         """
         self.thresholds_by_regime = {t.regime: t for t in threshold_configs}
         self.default_threshold = RegimeThresholdConfig(regime="DEFAULT")
+        self.strategy = strategy
 
     def get_thresholds(self, detected_regimes: List[str]) -> RegimeThresholdConfig:
         """Get thresholds for current regime mix.
@@ -85,11 +91,17 @@ class ThresholdScheduler:
             else:
                 regime_thresholds.append(self.default_threshold)
 
-        # If multiple regimes, average the thresholds
+        # If single regime, return it
         if len(regime_thresholds) == 1:
             return regime_thresholds[0]
 
-        # Average thresholds across regimes
+        # Handle multiple regimes based on strategy
+        if self.strategy == "restrictive":
+            # Select the one with the highest confidence threshold
+            restrictive_config = max(regime_thresholds, key=lambda t: t.confidence_threshold)
+            return restrictive_config
+
+        # Default to average strategy
         avg_config = RegimeThresholdConfig(
             regime="_".join(detected_regimes),
             confidence_threshold=np.mean([t.confidence_threshold for t in regime_thresholds]),
@@ -189,6 +201,21 @@ class CooldownManager:
         self._last_exit_times: Dict[str, datetime] = {}
         self._consecutive_losses: Dict[str, int] = {}
 
+    def _get_volatility_multiplier(self, regime: str) -> float:
+        """Get cooldown multiplier based on regime volatility.
+
+        Args:
+            regime: Current market regime
+
+        Returns:
+            Cooldown multiplier (e.g. 1.5x in VOL_HIGH)
+        """
+        if "HIGH" in regime.upper():
+            return 1.5
+        if "LOW" in regime.upper():
+            return 0.75
+        return 1.0
+
     def record_trade(
         self,
         symbol: str,
@@ -233,12 +260,18 @@ class CooldownManager:
 
         logger.info(f"[COOLDOWN] Recorded trade for {symbol}: PnL={pnl:.2f}, consecutive_losses={self._consecutive_losses.get(symbol, 0)}")
 
-    def is_in_cooldown(self, symbol: str, current_time: datetime) -> bool:
+    def is_in_cooldown(
+        self,
+        symbol: str,
+        current_time: datetime,
+        regime: str = "VOL_NORMAL"
+    ) -> bool:
         """Check if symbol is in cooldown period.
 
         Args:
             symbol: Trading pair symbol
             current_time: Current timestamp
+            regime: Current market regime
 
         Returns:
             True if in cooldown
@@ -251,27 +284,37 @@ class CooldownManager:
         last_exit = self._last_exit_times[symbol]
         minutes_since_exit = (current_time - last_exit).total_seconds() / 60
 
+        # Apply regime multiplier
+        multiplier = self._get_volatility_multiplier(regime)
+        base_cooldown = config.min_cooldown_minutes * multiplier
+
         # Check consecutive losses
         consecutive_losses = self._consecutive_losses.get(symbol, 0)
         if consecutive_losses >= config.max_consecutive_losses:
             # Extended cooldown after consecutive losses
-            extended_cooldown = config.max_cooldown_minutes * 1.5
+            extended_cooldown = config.max_cooldown_minutes * 1.5 * multiplier
             return minutes_since_exit < extended_cooldown
 
         # Normal cooldown
-        return minutes_since_exit < config.min_cooldown_minutes
+        return minutes_since_exit < base_cooldown
 
-    def get_remaining_cooldown(self, symbol: str, current_time: datetime) -> int:
+    def get_remaining_cooldown(
+        self,
+        symbol: str,
+        current_time: datetime,
+        regime: str = "VOL_NORMAL"
+    ) -> int:
         """Get remaining cooldown time in seconds.
 
         Args:
             symbol: Trading pair symbol
             current_time: Current timestamp
+            regime: Current market regime
 
         Returns:
             Remaining cooldown seconds (0 if not in cooldown)
         """
-        if not self.is_in_cooldown(symbol, current_time):
+        if not self.is_in_cooldown(symbol, current_time, regime):
             return 0
 
         config = self.configs_by_symbol.get(symbol, self.default_config)
@@ -281,10 +324,15 @@ class CooldownManager:
             return 0
 
         minutes_since_exit = (current_time - last_exit).total_seconds() / 60
+        multiplier = self._get_volatility_multiplier(regime)
 
         # Check consecutive losses
         consecutive_losses = self._consecutive_losses.get(symbol, 0)
-        cooldown_minutes = config.max_cooldown_minutes * 1.5 if consecutive_losses >= config.max_consecutive_losses else config.min_cooldown_minutes
+        cooldown_minutes = (
+            config.max_cooldown_minutes * 1.5 * multiplier
+            if consecutive_losses >= config.max_consecutive_losses
+            else config.min_cooldown_minutes * multiplier
+        )
 
         remaining_minutes = max(0, cooldown_minutes - minutes_since_exit)
         return int(remaining_minutes * 60)
@@ -644,16 +692,17 @@ class DriftMonitor:
 # ============================================================================
 
 def create_threshold_scheduler(
-    threshold_configs: Optional[List[RegimeThresholdConfig]] = None
+    threshold_configs: Optional[List[RegimeThresholdConfig]] = None,
+    strategy: str = "restrictive"
 ) -> ThresholdScheduler:
     """Create threshold scheduler."""
     if threshold_configs is None:
         threshold_configs = [
-            RegimeThresholdConfig(regime="VOL_LOW", confidence_threshold=0.5),
-            RegimeThresholdConfig(regime="VOL_NORMAL", confidence_threshold=0.6),
-            RegimeThresholdConfig(regime="VOL_HIGH", confidence_threshold=0.7),
+            RegimeThresholdConfig(regime="VOL_LOW", confidence_threshold=0.6),
+            RegimeThresholdConfig(regime="VOL_NORMAL", confidence_threshold=0.7),
+            RegimeThresholdConfig(regime="VOL_HIGH", confidence_threshold=0.8),
         ]
-    return ThresholdScheduler(threshold_configs)
+    return ThresholdScheduler(threshold_configs, strategy=strategy)
 
 
 def create_cooldown_manager(

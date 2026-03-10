@@ -87,6 +87,7 @@ class GovernorConfig:
     cooldown_after_calibration_hours: int = 2
     enable_drift_detection: bool = True
     enable_performance_triggers: bool = True
+    check_cadence_cycles: int = 100
 
     def __post_init__(self):
         """Validate configuration."""
@@ -98,6 +99,8 @@ class GovernorConfig:
             raise ValueError("drift_threshold must be in [0.0, 1.0]")
         if not 0.0 <= self.performance_drop_threshold <= 1.0:
             raise ValueError("performance_drop_threshold must be in [0.0, 1.0]")
+        if self.check_cadence_cycles < 1:
+            raise ValueError("check_cadence_cycles must be >= 1")
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
@@ -113,6 +116,7 @@ class GovernorConfig:
             "cooldown_after_calibration_hours": self.cooldown_after_calibration_hours,
             "enable_drift_detection": self.enable_drift_detection,
             "enable_performance_triggers": self.enable_performance_triggers,
+            "check_cadence_cycles": self.check_cadence_cycles,
         }
 
     @classmethod
@@ -130,6 +134,7 @@ class GovernorConfig:
             cooldown_after_calibration_hours=config.get("cooldown_after_calibration_hours", 2),
             enable_drift_detection=config.get("enable_drift_detection", True),
             enable_performance_triggers=config.get("enable_performance_triggers", True),
+            check_cadence_cycles=config.get("check_cadence_cycles", 100),
         )
 
 
@@ -185,6 +190,7 @@ class CalibrationGovernor:
         self._last_calibration_time: Optional[datetime] = None
         self._regime_sample_counts: Dict[str, int] = {}
         self._initial_calibration_triggered: bool = False  # Track if initial calibration has been triggered
+        self._cycles_since_last_check: int = 0
 
     def should_recalibrate(
         self,
@@ -264,6 +270,21 @@ class CalibrationGovernor:
                 "Initial calibration required",
                 confidence=1.0
             )
+
+        # Increment cycles
+        self._cycles_since_last_check += 1
+
+        # Check cadence
+        if self._cycles_since_last_check < self.config.check_cadence_cycles:
+            return self._create_decision(
+                CalibrationOutcome.SKIP,
+                None,
+                f"Cadence not met ({self._cycles_since_last_check} < {self.config.check_cadence_cycles})",
+                confidence=1.0
+            )
+
+        # If we reached here, it's a "full evaluation"
+        self._cycles_since_last_check = 0
 
         # Check cooldown period
         hours_since_cal = (now - last_calibration_time).total_seconds() / 3600
@@ -398,6 +419,9 @@ class CalibrationGovernor:
         # Reset the initial calibration triggered flag since calibration is now recorded
         self._initial_calibration_triggered = False
 
+        # Reset cycle counter
+        self._cycles_since_last_check = 0
+
         # Reset regime sample counts
         self._regime_sample_counts.clear()
 
@@ -430,6 +454,30 @@ class CalibrationGovernor:
         elapsed = (now - self._last_calibration_time).total_seconds() / 3600
         remaining = self.config.max_hours_between_calibration - elapsed
         return max(0.0, remaining)
+
+    def is_artifact_fresh(self, artifact_path: str, max_age_hours: float = 168.0) -> bool:
+        """Check if artifact file exists and is fresh based on modification time.
+        
+        Args:
+            artifact_path: Path to artifact file
+            max_age_hours: Maximum age in hours (default 7 days = 168 hours)
+            
+        Returns:
+            True if file exists and was modified within max_age_hours, False otherwise
+        """
+        try:
+            if not os.path.exists(artifact_path):
+                return False
+                
+            mtime = os.path.getmtime(artifact_path)
+            mod_time = datetime.fromtimestamp(mtime, tz=timezone.utc)
+            now = datetime.now(timezone.utc)
+            age_hours = (now - mod_time).total_seconds() / 3600
+            
+            return age_hours <= max_age_hours
+            
+        except (OSError, ValueError):
+            return False
 
     def get_status(self) -> Dict[str, Any]:
         """Get governor status summary."""

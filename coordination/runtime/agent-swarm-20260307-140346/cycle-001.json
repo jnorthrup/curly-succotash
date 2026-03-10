@@ -1,0 +1,14 @@
+[
+  {
+    "cycle": 1,
+    "workspace": "curly_succotash",
+    "cwd": "/Users/jim/work/curly-succotash",
+    "agent": "gemini",
+    "command": [
+      "gemini",
+      "-y",
+      "-p",
+      "You are operating inside the curly_succotash workspace at /Users/jim/work/curly-succotash.\nUse the local Conductor artifacts as the only workflow truth for this repo.\nRead the listed files first, then pick exactly one bounded TODO or blocker slice and execute it end-to-end.\nPrefer work that directly unblocks the trading stack: proxy, trading client, HRM shadow/promotion, replay, or integration validation.\nDo not rewrite Conductor doctrine or broad planning docs unless the slice requires updating repo truth artifacts after verification.\nRun focused verification for the slice you change and leave concrete evidence in the workspace.\nIf you hit a blocker, stop at the first real blocker and print it plainly.\n\nPriority context files:\n- /Users/jim/work/curly-succotash/conductor/workflow.md\n- /Users/jim/work/curly-succotash/conductor/tracks.md\n- /Users/jim/work/curly-succotash/conductor/product.md\n- /Users/jim/work/curly-succotash/TODO.md\n- /Users/jim/work/curly-succotash/README.md\nPrimary workflow file: /Users/jim/work/curly-succotash/conductor/workflow.md\nPrimary backlog file: /Users/jim/work/curly-succotash/TODO.md\n\nFollow the repo-local conductor workflow and backlog, but do not stream progress for a human watcher.\nWork to completion on one bounded slice, write verification evidence, and then exit.\nKeep context tight and stay on the immediate trader path: proxy, trading client, HRM, replay, or validation."
+    ]
+  }
+]

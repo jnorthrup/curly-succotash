@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from src.hrm_shadow import HRMShadowEngine, ShadowConfig, ShadowMetrics, ShadowMode
-from src.killswitch import DrawdownKillSwitch, KillSwitchConfig, KillSwitchState
-from src.models import Candle, Signal, SignalType, SimulatorConfig, Timeframe
-from src.scoreboard import ScoreboardGenerator
-from src.simulator import CoinbaseTradingSimulator
+from backend.src.hrm_shadow import HRMShadowEngine, ShadowConfig, ShadowMetrics, ShadowMode
+from backend.src.killswitch import DrawdownKillSwitch, KillSwitchConfig, KillSwitchState
+from backend.src.models import Candle, Signal, SignalType, SimulatorConfig, Timeframe
+from backend.src.scoreboard import ScoreboardGenerator
+from backend.src.simulator import CoinbaseTradingSimulator
 
 
 def make_candle(price: float, offset_hours: int = 0) -> Candle:
@@ -131,7 +131,7 @@ def test_scoreboard_generator_saves_all_formats(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_simulator_wires_shadow_and_generates_scoreboard(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
-        "src.simulator.SafetyEnforcement.run_all_checks",
+        "backend.src.simulator.SafetyEnforcement.run_all_checks",
         lambda client: {"all_passed": True, "no_trading_methods": True},
     )
 
@@ -203,7 +203,7 @@ async def test_simulator_wires_shadow_and_generates_scoreboard(monkeypatch, tmp_
 @pytest.mark.asyncio
 async def test_simulator_integrates_promotion_veto_and_runbook(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
-        "src.simulator.SafetyEnforcement.run_all_checks",
+        "backend.src.simulator.SafetyEnforcement.run_all_checks",
         lambda client: {"all_passed": True, "no_trading_methods": True},
     )
 
@@ -286,7 +286,7 @@ async def test_simulator_integrates_promotion_veto_and_runbook(monkeypatch, tmp_
 @pytest.mark.asyncio
 async def test_killswitch_halt_still_updates_open_positions(monkeypatch):
     monkeypatch.setattr(
-        "src.simulator.SafetyEnforcement.run_all_checks",
+        "backend.src.simulator.SafetyEnforcement.run_all_checks",
         lambda client: {"all_passed": True, "no_trading_methods": True},
     )
 

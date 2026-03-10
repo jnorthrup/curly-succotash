@@ -91,6 +91,30 @@ export const api = {
   
   verifySafety: () =>
     fetchApi<{ safety_verified: boolean; checks: any; message: string }>('/api/safety/verify'),
+
+  getHrmRingStatus: () =>
+    fetchApi<{
+      active_version: string;
+      history: string[];
+      execute_threshold: number;
+      latency_target_ms: number;
+      timestamp: string;
+    }>('/api/hrm/ring/status'),
+
+  getHrmRingDashboard: (limit: number = 100) =>
+    fetchApi<{
+      summary: {
+        total_requests: number;
+        execution_rate: number;
+        veto_rate: number;
+        avg_latency_ms: number;
+        max_latency_ms: number;
+      };
+      blocked_reasons: Record<string, number>;
+      alerts: string[];
+      active_version: string;
+      timestamp: string;
+    }>(`/api/hrm/ring/dashboard?limit=${limit}`),
 };
 
 export function createWebSocket(channel: 'signals' | 'bullpen'): WebSocket {

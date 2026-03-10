@@ -18,7 +18,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from heapq import merge
 from typing import Callable, Dict, Iterator, List, Optional, Tuple, Any
@@ -57,6 +57,8 @@ class ReplayConfig:
         start_time: Optional start time filter (inclusive)
         end_time: Optional end time filter (inclusive)
         seed: Optional seed for deterministic replay ordering
+        infinite_cursor: If True, fills gaps in candle streams with padding
+        align_symbols: If True, aligns all symbols to the earliest common start time
     """
     mode: ReplayMode = ReplayMode.COMPRESSED
     compression_factor: float = 100.0
@@ -65,6 +67,8 @@ class ReplayConfig:
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     seed: Optional[int] = None
+    infinite_cursor: bool = False
+    align_symbols: bool = False
 
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -377,13 +381,28 @@ class ReplayEngine:
 
         all_candles: List[Candle] = []
 
+        # Optional: Pre-calculate earliest start time if align_symbols is requested
+        # and no explicit start_time is provided.
+        start_override = None
+        if self.config.align_symbols and not self.config.start_time:
+            for symbol in self.config.symbols:
+                for timeframe in self.config.timeframes:
+                    try:
+                        db_start, _ = self.client.get_date_range(symbol, timeframe)
+                        if start_override is None or db_start < start_override:
+                            start_override = db_start
+                    except Exception:
+                        continue
+            if start_override:
+                logger.info(f"[LOAD] Aligned start time to {start_override}")
+
         for symbol in self.config.symbols:
             for timeframe in self.config.timeframes:
                 try:
                     # Determine date range
                     db_start, db_end = self.client.get_date_range(symbol, timeframe)
 
-                    start = self.config.start_time or db_start
+                    start = self.config.start_time or start_override or db_start
                     end = self.config.end_time or db_end
 
                     if start < db_start:
@@ -421,6 +440,7 @@ class ReplayEngine:
 
         Uses a heap-based merge sort to efficiently combine candles from
         different symbols while maintaining chronological order.
+        Supports infinite cursor mode for gap filling and symbol alignment.
 
         Args:
             candles: List of candles from potentially multiple symbols
@@ -431,28 +451,105 @@ class ReplayEngine:
         if not candles:
             return []
 
-        # Group candles by symbol
-        symbol_candles: Dict[str, List[Candle]] = {}
+        # Group candles by (symbol, timeframe)
+        symbol_streams: Dict[Tuple[str, Timeframe], List[Candle]] = {}
         for candle in candles:
-            key = f"{candle.symbol}_{candle.timeframe.value}"
-            if key not in symbol_candles:
-                symbol_candles[key] = []
-            symbol_candles[key].append(candle)
+            key = (candle.symbol, candle.timeframe)
+            if key not in symbol_streams:
+                symbol_streams[key] = []
+            symbol_streams[key].append(candle)
 
-        # Sort each symbol's candles
-        for key in symbol_candles:
-            symbol_candles[key].sort(key=lambda c: c.timestamp)
+        # Sort each stream
+        for key in symbol_streams:
+            symbol_streams[key].sort(key=lambda c: c.timestamp)
 
-        # Use heapq.merge for efficient multi-way merge (like merge step of merge sort)
-        # This handles gaps and different data availability across symbols
-        sorted_streams = [iter(stream) for stream in symbol_candles.values()]
+        # Determine global time range for synchronization/padding
+        all_timestamps = [c.timestamp for c in candles]
+        global_start = min(all_timestamps)
+        global_end = max(all_timestamps)
 
-        # Custom key for merging
+        # Optionally align to user-specified start time if earlier
+        if self.config.align_symbols and self.config.start_time:
+            if self.config.start_time < global_start:
+                global_start = self.config.start_time
+
+        processed_streams = []
+
+        if self.config.infinite_cursor or self.config.align_symbols:
+            # Multi-symbol synchronization with padding
+            for (symbol, timeframe), stream in symbol_streams.items():
+                delta = timedelta(seconds=Timeframe.to_seconds(timeframe))
+                padded_stream = []
+                last_candle = None
+
+                # Start alignment: align to global_start if align_symbols is ON
+                # Grid alignment: ensure current_ts follows the stream's candle grid
+                first_real_ts = stream[0].timestamp
+                current_ts = global_start if self.config.align_symbols else first_real_ts
+
+                # Adjust current_ts to align with timeframe grid defined by first_real_ts
+                diff_seconds = (first_real_ts - current_ts).total_seconds()
+                if diff_seconds > 0:
+                    offset = diff_seconds % delta.total_seconds()
+                    if offset != 0:
+                        current_ts += timedelta(seconds=offset)
+
+                stream_idx = 0
+                while current_ts <= global_end:
+                    # Match real candle
+                    if stream_idx < len(stream) and stream[stream_idx].timestamp == current_ts:
+                        candle = stream[stream_idx]
+                        padded_stream.append(candle)
+                        last_candle = candle
+                        stream_idx += 1
+                        current_ts += delta
+                    elif stream_idx < len(stream) and stream[stream_idx].timestamp < current_ts:
+                        # Skip stale candles (should not happen if sorted and grid aligned)
+                        stream_idx += 1
+                    else:
+                        # Gap or Padding
+                        is_padding_needed = False
+                        if current_ts < first_real_ts:
+                            if self.config.align_symbols:
+                                is_padding_needed = True
+                        elif stream_idx >= len(stream):
+                            if self.config.infinite_cursor:
+                                is_padding_needed = True
+                            else:
+                                break # No more data and no infinite padding
+                        else: # Gap between candles
+                            if self.config.infinite_cursor:
+                                is_padding_needed = True
+                            else:
+                                # Skip to next real candle to maintain original behavior for gaps
+                                current_ts = stream[stream_idx].timestamp
+                                continue
+
+                        if is_padding_needed:
+                            padded_stream.append(Candle(
+                                timestamp=current_ts,
+                                open=last_candle.close if last_candle else 0.0,
+                                high=last_candle.close if last_candle else 0.0,
+                                low=last_candle.close if last_candle else 0.0,
+                                close=last_candle.close if last_candle else 0.0,
+                                volume=0.0,
+                                symbol=symbol,
+                                timeframe=timeframe
+                            ))
+                            current_ts += delta
+                        else:
+                            break
+                processed_streams.append(iter(padded_stream))
+        else:
+            # Standard merge sort
+            for stream in symbol_streams.values():
+                processed_streams.append(iter(stream))
+
+        # Use heapq.merge for efficient multi-way merge
         def candle_key(candle):
             return candle.timestamp
 
-        # Merge all streams
-        merged = list(merge(*sorted_streams, key=candle_key))
+        merged = list(merge(*processed_streams, key=candle_key))
 
         # If deterministic ordering requested, shuffle with seed
         if self._rng and self.config.seed:

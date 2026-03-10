@@ -1,0 +1,40 @@
+{
+  "train_ratio": 0.6,
+  "calibration_ratio": 0.2,
+  "test_ratio": 0.2,
+  "min_regimes_per_split": 3,
+  "ensure_regime_balance": true,
+  "min_days_per_split": 60,
+  "no_future_leakage": true,
+  "min_samples_per_regime": 1000,
+  "regime_balance_tolerance": 0.15,
+  "train_window": {
+    "start_time": "2023-01-01T00:00:00Z",
+    "end_time": "2023-07-31T23:59:59Z",
+    "description": "Multi-regime training window capturing Q1/Q2 2023 recovery and crabbing"
+  },
+  "calibration_window": {
+    "start_time": "2023-08-01T00:00:00Z",
+    "end_time": "2023-10-31T23:59:59Z",
+    "description": "Non-overlapping out-of-sample calibration window"
+  },
+  "test_window": {
+    "start_time": "2023-11-01T00:00:00Z",
+    "end_time": "2024-02-01T00:00:00Z",
+    "description": "Strict hold-out test window capturing Q4 2023 bull transition"
+  },
+  "required_regimes": [
+    {
+      "regime": "VOL_HIGH",
+      "min_samples": 500
+    },
+    {
+      "regime": "VOL_LOW",
+      "min_samples": 500
+    },
+    {
+      "regime": "TREND_BULL_STRONG",
+      "min_samples": 500
+    }
+  ]
+}

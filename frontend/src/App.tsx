@@ -7,6 +7,7 @@ import { ConsensusDisplay } from '@/components/ConsensusDisplay';
 import { StrategyTable } from '@/components/StrategyTable';
 import { SignalFeed } from '@/components/SignalFeed';
 import { BacktestPanel } from '@/components/BacktestPanel';
+import { HrmDashboard } from '@/components/HrmDashboard';
 import { api } from '@/lib/api';
 import type { BullpenView, Signal, SimulatorStatus } from '@/lib/types';
 
@@ -136,6 +137,13 @@ function App() {
               >
                 Backtest
               </TabsTrigger>
+              <TabsTrigger 
+                value="model" 
+                className="data-[state=active]:bg-purple-600/20 data-[state=active]:text-purple-400"
+                data-design-id="tab-model"
+              >
+                Model
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="bullpen" className="space-y-6" data-design-id="bullpen-tab-content">
@@ -155,6 +163,10 @@ function App() {
 
             <TabsContent value="backtest" data-design-id="backtest-tab-content">
               <BacktestPanel />
+            </TabsContent>
+
+            <TabsContent value="model" data-design-id="model-tab-content">
+              <HrmDashboard />
             </TabsContent>
           </Tabs>
 

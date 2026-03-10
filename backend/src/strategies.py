@@ -23,8 +23,26 @@ class StrategyConfig:
     initial_capital: float = 10000.0
     position_size_pct: float = 5.0
     max_positions: int = 1
+    
+    # Static fallback values
     stop_loss_pct: float = 2.0
     take_profit_pct: float = 4.0
+    
+    # Dynamic ROI rules (time-to-profit mapping in minutes)
+    # e.g., {0: 0.04, 60: 0.02, 120: 0.01}
+    minimal_roi: Dict[int, float] = field(default_factory=lambda: {0: 0.04})
+    
+    # Dynamic Stoploss rules
+    trailing_stop: bool = False
+    trailing_stop_positive: Optional[float] = None
+    trailing_stop_positive_offset: float = 0.005
+    trailing_only_offset_is_reached: bool = False
+    
+    # Execution realism parameters
+    commission_pct: float = 0.1
+    slippage_bps: float = 5.0
+    market_impact_factor: float = 0.1  # additional bps per 100k notional
+    latency_ms: float = 50.0  # basic latency proxy
 
 
 class BaseStrategy(ABC):
@@ -78,28 +96,84 @@ class BaseStrategy(ABC):
         return signal
     
     def _check_stops(self, candle: Candle):
-        """Check and execute stop-loss or take-profit."""
+        """Check and execute stop-loss or take-profit with dynamic rules."""
         if not self.position:
             return
         
         self.position.update_pnl(candle.close)
         
-        if self.position.stop_loss and candle.low <= self.position.stop_loss:
-            self._close_position(candle, self.position.stop_loss, "Stop-loss hit")
-        elif self.position.take_profit and candle.high >= self.position.take_profit:
-            self._close_position(candle, self.position.take_profit, "Take-profit hit")
+        # 1. Check Dynamic ROI
+        holding_minutes = (candle.timestamp - self.position.entry_time).total_seconds() / 60
+        current_roi = (candle.close - self.position.entry_price) / self.position.entry_price
+        if self.position.side == SignalType.SHORT:
+            current_roi = -current_roi
+            
+        # Find applicable ROI threshold
+        applicable_threshold = None
+        for minutes, threshold in sorted(self.config.minimal_roi.items(), reverse=True):
+            if holding_minutes >= minutes:
+                applicable_threshold = threshold
+                break
+        
+        if applicable_threshold is not None and current_roi >= applicable_threshold:
+            self._close_position(candle, candle.close, f"ROI hit ({applicable_threshold*100:.1f}%)")
+            return
+
+        # 2. Update Trailing Stop
+        if self.config.trailing_stop:
+            self._update_trailing_stop(candle, current_roi)
+
+        # 3. Check Fixed Stops
+        if self.position.stop_loss and ((self.position.side == SignalType.LONG and candle.low <= self.position.stop_loss) or 
+                                       (self.position.side == SignalType.SHORT and candle.high >= self.position.stop_loss)):
+            exit_price = self.position.stop_loss
+            self._close_position(candle, exit_price, "Stop-loss hit")
+        elif self.position.take_profit and ((self.position.side == SignalType.LONG and candle.high >= self.position.take_profit) or
+                                           (self.position.side == SignalType.SHORT and candle.low <= self.position.take_profit)):
+            exit_price = self.position.take_profit
+            self._close_position(candle, exit_price, "Take-profit hit")
+
+    def _update_trailing_stop(self, candle: Candle, current_roi: float):
+        """Update trailing stop-loss level."""
+        if not self.position:
+            return
+            
+        # Trailing logic implementation
+        offset = self.config.trailing_stop_positive_offset
+        
+        if self.position.side == SignalType.LONG:
+            new_sl = candle.close * (1 - offset)
+            if self.position.stop_loss is None or new_sl > self.position.stop_loss:
+                self.position.stop_loss = new_sl
+        else:
+            new_sl = candle.close * (1 + offset)
+            if self.position.stop_loss is None or new_sl < self.position.stop_loss:
+                self.position.stop_loss = new_sl
     
     def _close_position(self, candle: Candle, exit_price: float, reason: str):
-        """Close current position and record trade."""
+        """Close current position and record trade with execution realism."""
         if not self.position:
             return
         
-        if self.position.side == SignalType.LONG:
-            pnl = (exit_price - self.position.entry_price) * self.position.size
-        else:
-            pnl = (self.position.entry_price - exit_price) * self.position.size
+        notional = exit_price * self.position.size
         
-        self.equity += pnl
+        # Calculate execution costs
+        impact_bps = self.config.slippage_bps + (notional / 100000.0) * self.config.market_impact_factor
+        latency_bps = self.config.latency_ms * 0.01
+        total_slippage_bps = impact_bps + latency_bps
+        slippage_rate = total_slippage_bps / 10000.0
+        
+        commission = notional * (self.config.commission_pct / 100.0)
+        
+        if self.position.side == SignalType.LONG:
+            actual_exit = exit_price * (1 - slippage_rate)
+            gross_pnl = (actual_exit - self.position.entry_price) * self.position.size
+        else:
+            actual_exit = exit_price * (1 + slippage_rate)
+            gross_pnl = (self.position.entry_price - actual_exit) * self.position.size
+        
+        net_pnl = gross_pnl - commission
+        self.equity += net_pnl
         
         self.trades.append({
             "entry_time": self.position.entry_time,
@@ -107,35 +181,40 @@ class BaseStrategy(ABC):
             "symbol": self.position.symbol,
             "side": self.position.side.value,
             "entry_price": self.position.entry_price,
-            "exit_price": exit_price,
+            "exit_price": actual_exit,
             "size": self.position.size,
-            "pnl": pnl,
+            "pnl": net_pnl,
             "reason": reason,
         })
         
         self.position = None
     
     def _execute_paper_signal(self, signal: Signal, candle: Candle):
-        """Execute paper trade based on signal."""
-        if signal.signal_type == SignalType.LONG and not self.position:
-            size = (self.equity * self.config.position_size_pct / 100) / signal.entry_price
+        """Execute paper trade based on signal with execution realism."""
+        if signal.signal_type in [SignalType.LONG, SignalType.SHORT] and not self.position:
+            target_notional = self.equity * (self.config.position_size_pct / 100)
+            
+            # Calculate execution costs
+            impact_bps = self.config.slippage_bps + (target_notional / 100000.0) * self.config.market_impact_factor
+            latency_bps = self.config.latency_ms * 0.01
+            total_slippage_bps = impact_bps + latency_bps
+            slippage_rate = total_slippage_bps / 10000.0
+            
+            commission = target_notional * (self.config.commission_pct / 100.0)
+            self.equity -= commission
+            
+            if signal.signal_type == SignalType.LONG:
+                actual_entry = signal.entry_price * (1 + slippage_rate)
+            else:
+                actual_entry = signal.entry_price * (1 - slippage_rate)
+                
+            size = target_notional / actual_entry
+            
             self.position = Position(
                 symbol=signal.symbol,
                 strategy_name=self.name,
-                side=SignalType.LONG,
-                entry_price=signal.entry_price,
-                entry_time=signal.timestamp,
-                size=size,
-                stop_loss=signal.stop_loss,
-                take_profit=signal.take_profit,
-            )
-        elif signal.signal_type == SignalType.SHORT and not self.position:
-            size = (self.equity * self.config.position_size_pct / 100) / signal.entry_price
-            self.position = Position(
-                symbol=signal.symbol,
-                strategy_name=self.name,
-                side=SignalType.SHORT,
-                entry_price=signal.entry_price,
+                side=signal.signal_type,
+                entry_price=actual_entry,
                 entry_time=signal.timestamp,
                 size=size,
                 stop_loss=signal.stop_loss,

@@ -2,6 +2,7 @@ import ctypes
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
+from .quality_gates import forbid_mock_fallbacks
 
 class KotlinBridgeAdapter:
     """
@@ -13,6 +14,7 @@ class KotlinBridgeAdapter:
         # self.lib = ctypes.CDLL(lib_path)
         pass
 
+    @forbid_mock_fallbacks
     def get_indicators(self, symbol: str, timeframe: str) -> pd.DataFrame:
         """
         Calls the Kotlin FeatureExtractionPipeline to get DuckSeries data,
@@ -27,7 +29,8 @@ class KotlinBridgeAdapter:
             'bb_upper': np.random.randn(100),
             'bb_mid': np.random.randn(100),
             'bb_lower': np.random.randn(100),
-            'atr': np.random.randn(100)
+            'atr': np.random.randn(100),
+            'fallback': True # This will trigger quality gate if STRICT_QA=true
         })
         return df
 

@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 
@@ -18,12 +19,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .freqtrade_ring_agent import FreqtradeRingAgent, HRMModelServer
 from .models import Timeframe, SimulatorConfig
 from .simulator import get_simulator, reset_simulator, CoinbaseTradingSimulator
 from .bullpen import RankingMetric
 from .backtesting import BacktestConfig
 
+from typing import Any
+
 logger = logging.getLogger(__name__)
+
+DEFAULT_RING_AGENT_VERSION = "v1.0.0"
+DEFAULT_RING_EXECUTE_THRESHOLD = 0.8
+DEFAULT_RING_LATENCY_TARGET_MS = 100.0
 
 
 class BacktestRequest(BaseModel):
@@ -39,6 +47,10 @@ class SimulatorConfigRequest(BaseModel):
     initial_capital: float = Field(default=10000.0, gt=0)
     position_size_pct: float = Field(default=5.0, gt=0, le=100)
     poll_interval_seconds: int = Field(default=60, ge=10)
+
+
+class HRMRingArtifactRequest(BaseModel):
+    artifact_path: str = Field(..., min_length=1)
 
 
 class ConnectionManager:
@@ -86,6 +98,26 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+hrm_ring_agent = FreqtradeRingAgent(
+    active_version=DEFAULT_RING_AGENT_VERSION,
+    execute_threshold=DEFAULT_RING_EXECUTE_THRESHOLD,
+    latency_target_ms=DEFAULT_RING_LATENCY_TARGET_MS,
+)
+
+
+def reset_hrm_ring_agent(
+    active_version: str = DEFAULT_RING_AGENT_VERSION,
+    execute_threshold: float = DEFAULT_RING_EXECUTE_THRESHOLD,
+    latency_target_ms: float = DEFAULT_RING_LATENCY_TARGET_MS,
+) -> FreqtradeRingAgent:
+    """Reset the in-process ring agent state for focused tests and local runs."""
+    global hrm_ring_agent
+    hrm_ring_agent = FreqtradeRingAgent(
+        active_version=active_version,
+        execute_threshold=execute_threshold,
+        latency_target_ms=latency_target_ms,
+    )
+    return hrm_ring_agent
 
 
 @asynccontextmanager
@@ -333,6 +365,39 @@ def get_price(symbol: str):
     }
 
 
+@app.get("/api/exchanges/binance/symbols")
+def binance_symbols():
+    """Return available symbols from the local Binance archive (DuckDB)."""
+    from .binance_client import BinanceArchiveClient
+
+    try:
+        client = BinanceArchiveClient()
+        symbols = client.get_available_symbols()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[EXCHANGES] Binance symbols fetch failed: {exc}")
+        symbols = []
+
+    return {"count": len(symbols), "symbols": symbols}
+
+
+@app.get("/api/exchanges/coinbase/ticker/{product_id}")
+def coinbase_ticker(product_id: str):
+    """Return the product ticker for a Coinbase product id via the public API client."""
+    from .coinbase_client import CoinbaseMarketDataClient
+
+    try:
+        client = CoinbaseMarketDataClient()
+        ticker = client.get_product_ticker(product_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"[EXCHANGES] Coinbase ticker fetch failed: {exc}")
+        ticker = None
+
+    if ticker is None:
+        raise HTTPException(status_code=404, detail=f"Ticker not found: {product_id}")
+
+    return {"product_id": product_id, "ticker": ticker}
+
+
 @app.get("/api/valuation")
 def get_valuation(
     symbol: str = Query(..., description="Symbol to value"),
@@ -341,6 +406,71 @@ def get_valuation(
     """Get USD valuation for an amount of a symbol."""
     simulator = get_simulator()
     return simulator.get_usd_valuation(symbol, amount)
+
+
+@app.get("/api/hrm/ring/status")
+def get_hrm_ring_status():
+    """Expose the current in-process ring-agent state without executing trades."""
+    return {
+        "active_version": hrm_ring_agent.gate.active_version,
+        "history": list(hrm_ring_agent.gate.history),
+        "execute_threshold": hrm_ring_agent.execute_threshold,
+        "latency_target_ms": hrm_ring_agent.latency_target_ms,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/api/hrm/ring/dashboard")
+def get_hrm_ring_dashboard(limit: int = Query(default=100, ge=1, le=1000)):
+    """Retrieve degradation and performance metrics from the HRM ring audit log."""
+    return hrm_ring_agent.get_dashboard_metrics(limit=limit)
+
+
+@app.post("/api/hrm/ring/process")
+def process_hrm_ring_request(request_data: Dict[str, Any]):
+    """Process a handoff/webhook payload through the ring agent."""
+    result = hrm_ring_agent.process_trading_request(request_data)
+    return {
+        **result,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/api/hrm/ring/evaluate")
+def evaluate_hrm_ring_artifact(request: HRMRingArtifactRequest):
+    """Evaluate a local artifact and update the active ring-agent version when promotable."""
+    artifact_path = Path(request.artifact_path).expanduser()
+    if not artifact_path.exists():
+        raise HTTPException(status_code=404, detail=f"Artifact not found: {artifact_path}")
+    if not artifact_path.is_file():
+        raise HTTPException(status_code=400, detail=f"Artifact path is not a file: {artifact_path}")
+
+    try:
+        result = hrm_ring_agent.evaluate_hrm_artifact(str(artifact_path))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Artifact is not valid JSON: {exc.msg}") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to read artifact: {exc}") from exc
+
+    return {
+        **result,
+        "artifact_path": str(artifact_path),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/api/hrm/ring/rollback")
+def rollback_hrm_ring():
+    """Roll back the active ring-agent version to the previous promoted version."""
+    previous = hrm_ring_agent.gate.rollback()
+    if previous is not None:
+        hrm_ring_agent.server = HRMModelServer(hrm_ring_agent.gate.active_version)
+    return {
+        "rolled_back": previous is not None,
+        "active_version": hrm_ring_agent.gate.active_version,
+        "history": list(hrm_ring_agent.gate.history),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.get("/api/safety/verify")

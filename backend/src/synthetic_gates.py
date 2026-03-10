@@ -44,12 +44,31 @@ class GateResult:
         }
 
 
+class SyntheticAgent(ABC):
+    """Base class for synthetic baseline agents."""
+
+    @abstractmethod
+    def __call__(self, x: np.ndarray) -> np.ndarray:
+        """Predict output given input data."""
+        pass
+
+
+class PersistenceBaseline(SyntheticAgent):
+    """
+    Baseline agent that always predicts the last input value (Persistence).
+    """
+
+    def __call__(self, x: np.ndarray) -> np.ndarray:
+        return x.copy()
+
+
 class SyntheticGate(ABC):
     """Base class for synthetic competency gates."""
 
-    def __init__(self, name: str, threshold: float = 0.01):
+    def __init__(self, name: str, threshold: float = 0.01, metric: str = "mse"):
         self.name = name
         self.threshold = threshold
+        self.metric = metric
 
     @abstractmethod
     def generate_data(self, samples: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
@@ -81,9 +100,21 @@ class SyntheticGate(ABC):
                 return np.mean((y_true - y_b[:, :y_true.shape[1]])**2)
             return float('inf')
 
+        def safe_mae(y_b):
+            if y_b.shape == y_true.shape:
+                return np.mean(np.abs(y_true - y_b))
+            # Naive fallback if shapes don't match
+            if y_b.shape[0] == y_true.shape[0]:
+                return np.mean(np.abs(y_true - y_b[:, :y_true.shape[1]]))
+            return float('inf')
+
         mse_pers = safe_mse(y_pers)
         mse_ema = safe_mse(y_ema)
         mse_lin = safe_mse(y_lin)
+
+        mae_pers = safe_mae(y_pers)
+        mae_ema = safe_mae(y_ema)
+        mae_lin = safe_mae(y_lin)
 
         # Calculate correlation
         if np.std(y_true) > 0 and np.std(y_pred) > 0:
@@ -91,15 +122,26 @@ class SyntheticGate(ABC):
         else:
             correlation = 0.0
 
-        beats_baselines = mse <= mse_pers and mse <= mse_ema and mse <= mse_lin
+        if self.metric == "mae":
+            primary_val = mae
+            primary_pers = mae_pers
+            primary_ema = mae_ema
+            primary_lin = mae_lin
+        else:
+            primary_val = mse
+            primary_pers = mse_pers
+            primary_ema = mse_ema
+            primary_lin = mse_lin
 
-        success = bool(mse < self.threshold and beats_baselines)
+        beats_baselines = primary_val <= primary_pers and primary_val <= primary_ema and primary_val <= primary_lin
+
+        success = bool(primary_val < self.threshold and beats_baselines)
         failure_reason = None
         if not success:
-            if mse >= self.threshold:
-                failure_reason = f"MSE {mse:.6f} exceeds threshold {self.threshold:.6f}"
+            if primary_val >= self.threshold:
+                failure_reason = f"{self.metric.upper()} {primary_val:.6f} exceeds threshold {self.threshold:.6f}"
             else:
-                failure_reason = f"Failed to beat baselines. MSE={mse:.6f}, Pers={mse_pers:.6f}, EMA={mse_ema:.6f}, Lin={mse_lin:.6f}"
+                failure_reason = f"Failed to beat baselines. {self.metric.upper()}={primary_val:.6f}, Pers={primary_pers:.6f}, EMA={primary_ema:.6f}, Lin={primary_lin:.6f}"
 
         return GateResult(
             gate_name=self.name,
@@ -112,7 +154,11 @@ class SyntheticGate(ABC):
             metadata={
                 "mse_pers": float(mse_pers),
                 "mse_ema": float(mse_ema),
-                "mse_lin": float(mse_lin)
+                "mse_lin": float(mse_lin),
+                "mae_pers": float(mae_pers),
+                "mae_ema": float(mae_ema),
+                "mae_lin": float(mae_lin),
+                "metric_used": self.metric
             }
         )
 
@@ -125,7 +171,7 @@ class IdentityGate(SyntheticGate):
     """
 
     def __init__(self, threshold: float = 1e-5):
-        super().__init__("identity", threshold)
+        super().__init__("identity", threshold, metric="mae")
 
     def generate_data(self, samples: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
         x = np.random.uniform(-1, 1, (samples, 1))
@@ -134,7 +180,7 @@ class IdentityGate(SyntheticGate):
 
 class SineGate(SyntheticGate):
     """
-    Sine wave synthetic gate.
+    Standard sine wave synthetic gate.
     The model must predict the next value in a sine wave.
     Tests pattern recognition, frequency, and phase tracking.
     """
@@ -147,6 +193,80 @@ class SineGate(SyntheticGate):
         data = np.sin(t)
         x = data[:-1].reshape(-1, 1)
         y = data[1:].reshape(-1, 1)
+        return x, y
+
+
+class AmplitudeSineGate(SyntheticGate):
+    """
+    Sine gate with varying amplitude.
+    Tests if the model can handle signals with different scales.
+    """
+
+    def __init__(self, amplitude: float = 2.0, threshold: float = 0.02):
+        super().__init__(f"sine_amplitude_{amplitude}", threshold)
+        self.amplitude = amplitude
+
+    def generate_data(self, samples: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
+        t = np.linspace(0, 4 * np.pi, samples + 1)
+        data = self.amplitude * np.sin(t)
+        x = data[:-1].reshape(-1, 1)
+        y = data[1:].reshape(-1, 1)
+        return x, y
+
+
+class FrequencySineGate(SyntheticGate):
+    """
+    Sine gate with varying frequency.
+    Tests if the model can adapt to faster or slower oscillations.
+    """
+
+    def __init__(self, frequency: float = 2.0, threshold: float = 0.05):
+        super().__init__(f"sine_frequency_{frequency}", threshold)
+        self.frequency = frequency
+
+    def generate_data(self, samples: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
+        t = np.linspace(0, 4 * np.pi * self.frequency, samples + 1)
+        data = np.sin(t)
+        x = data[:-1].reshape(-1, 1)
+        y = data[1:].reshape(-1, 1)
+        return x, y
+
+
+class PhaseSineGate(SyntheticGate):
+    """
+    Sine gate with a phase shift.
+    Tests if the model can handle shifted starting points.
+    """
+
+    def __init__(self, phase: float = math.pi / 2, threshold: float = 0.01):
+        super().__init__("sine_phase_shift", threshold)
+        self.phase = phase
+
+    def generate_data(self, samples: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
+        t = np.linspace(0, 4 * np.pi, samples + 1)
+        data = np.sin(t + self.phase)
+        x = data[:-1].reshape(-1, 1)
+        y = data[1:].reshape(-1, 1)
+        return x, y
+
+
+class NoisySineGate(SyntheticGate):
+    """
+    Sine gate with added Gaussian noise.
+    Tests model robustness to imperfect signals.
+    """
+
+    def __init__(self, noise_std: float = 0.05, threshold: float = 0.1):
+        super().__init__("sine_noisy", threshold)
+        self.noise_std = noise_std
+
+    def generate_data(self, samples: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
+        t = np.linspace(0, 4 * np.pi, samples + 1)
+        signal = np.sin(t)
+        noise = np.random.normal(0, self.noise_std, samples + 1)
+        data = signal + noise
+        x = data[:-1].reshape(-1, 1)
+        y = signal[1:].reshape(-1, 1)  # Target is the clean signal
         return x, y
 
 
@@ -238,6 +358,10 @@ class CompetencyEvaluator:
         self.gates = [
             IdentityGate(),
             SineGate(),
+            AmplitudeSineGate(),
+            FrequencySineGate(),
+            PhaseSineGate(),
+            NoisySineGate(),
             MultiHorizonGate(horizon=1),
             MultiHorizonGate(horizon=5),
             MaskedReconstructionGate(),

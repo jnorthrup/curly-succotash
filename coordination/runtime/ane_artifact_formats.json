@@ -1,0 +1,47 @@
+{
+  "definitions": {
+    "ane_export_manifest": {
+      "type": "object",
+      "description": "Defines the shape, precision, and inputs of an MLX model serialized for ANE compilation.",
+      "properties": {
+        "schema": { "type": "string", "enum": ["moneyfan.ane.export.v1"] },
+        "model_version": { "type": "string" },
+        "source_framework": { "type": "string", "enum": ["mlx", "pytorch"] },
+        "precision": { "type": "string", "enum": ["fp16", "fp32"] },
+        "input_shapes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "integer" }
+          },
+          "description": "Must be completely static (no -1 or variable dimensions) to satisfy ANE budget."
+        },
+        "output_shapes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "integer" }
+          }
+        },
+        "coreml_package_path": { "type": "string" },
+        "exported_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["schema", "model_version", "input_shapes", "coreml_package_path"]
+    },
+    "ane_evaluation_metrics": {
+      "type": "object",
+      "description": "Hardware-specific metrics emitted during an ANE trial run, consumed by curly-succotash.",
+      "properties": {
+        "schema": { "type": "string", "enum": ["moneyfan.ane.metrics.v1"] },
+        "model_version": { "type": "string" },
+        "throughput_hz": { "type": "number", "description": "Inferences per second" },
+        "average_latency_ms": { "type": "number" },
+        "p99_latency_ms": { "type": "number" },
+        "ane_utilization_pct": { "type": "number" },
+        "cpu_fallback_count": { "type": "integer", "description": "Number of operations forced off the ANE. Should be 0." },
+        "memory_peak_mb": { "type": "number" }
+      },
+      "required": ["schema", "model_version", "throughput_hz", "cpu_fallback_count"]
+    }
+  }
+}

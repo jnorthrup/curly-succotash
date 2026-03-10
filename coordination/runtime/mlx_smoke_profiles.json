@@ -1,0 +1,46 @@
+{
+  "profiles": [
+    {
+      "name": "mlx_micro_smoke",
+      "description": "Extremely fast profile (under 5 seconds) to test pipeline plumbing, M1/M2/M3 device initialization, and gradient flow on MLX.",
+      "hyperparameters": {
+        "hidden_size": 32,
+        "num_layers": 1,
+        "batch_size": 16,
+        "learning_rate": 0.001,
+        "max_steps": 10
+      },
+      "dataset": "v1_minimal",
+      "target_metric": "loss",
+      "expected_runtime_seconds": 5
+    },
+    {
+      "name": "mlx_fast_convergence",
+      "description": "Fast profile (under 60 seconds) to verify synthetic competency convergence (e.g. identity, sine) before moving to full market data on MLX.",
+      "hyperparameters": {
+        "hidden_size": 64,
+        "num_layers": 2,
+        "batch_size": 32,
+        "learning_rate": 0.003,
+        "max_steps": 500
+      },
+      "dataset": "synthetic_only",
+      "target_metric": "mse",
+      "expected_runtime_seconds": 45
+    },
+    {
+      "name": "mlx_bounded_market",
+      "description": "Short market profile (under 5 minutes) running on a single stablecoin pair to ensure feature extractors and loss objectives don't OOM or NaN out on real distributions.",
+      "hyperparameters": {
+        "hidden_size": 128,
+        "num_layers": 3,
+        "batch_size": 64,
+        "learning_rate": 0.0005,
+        "max_steps": 2000
+      },
+      "dataset": "v1_minimal_single_pair",
+      "target_metric": "directional_accuracy",
+      "expected_runtime_seconds": 300
+    }
+  ]
+}

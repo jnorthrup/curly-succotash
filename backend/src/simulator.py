@@ -23,10 +23,8 @@ from .hrm_promotion import HRMPromotionLadder, create_promotion_ladder
 from .veto_regression_watch import VetoReason, VetoRegressionWatch, create_veto_watch
 from .daily_runbook import DailyRunbookGenerator, create_runbook_generator
 from .calibration_governor import CalibrationGovernor, CalibrationTrigger
-from .calibration_support import (
-    ThresholdScheduler, CooldownManager, DriftMonitor,
-    RegimeThresholdConfig, CooldownConfig
-)
+import numpy as np
+from .calibration_support import ThresholdScheduler, CooldownManager, DriftMonitor, DriftLevel, DriftAlert, RegimeThresholdConfig, CooldownConfig
 from .confidence_calibration import ConfidenceCalibrator
 from .strategies import STRATEGY_REGISTRY
 
@@ -103,8 +101,18 @@ class CoinbaseTradingSimulator:
         self.drift_monitor = DriftMonitor()
         self.confidence_calibrator = ConfidenceCalibrator()
 
+        self._price_history: Dict[str, List[float]] = {}
+        self._volatility_window: int = 20
+
+        self._recent_confidences: List[float] = []
+        self._max_confidence_window: int = 1000
+        self._last_drift_alert: Optional[DriftAlert] = None
+
         self._seen_trade_counts: Dict[str, int] = {}
         self._pending_vetoes: Dict[str, List[Dict[str, Any]]] = {}
+
+        # Synthetic validation state
+        self._synthetic_milestone_passed: bool = False
 
         # Training components (initialized on demand)
         self._training_harness: Optional[Any] = None
@@ -143,7 +151,66 @@ class CoinbaseTradingSimulator:
                 cumulative_loss_limit_pct=self.config.cumulative_loss_limit_pct,
                 max_consecutive_losses=self.config.max_consecutive_losses,
             )
+            if kill_config.cumulative_loss_limit_pct >= 50.0:
+                logger.warning("[SAFETY] ⚠️  Kill-switch limit is extremely high (>=50%)")
+            
             self.killswitch = DrawdownKillSwitch(kill_config, self.config.initial_capital)
+
+        # Run synthetic validation if shadow mode is enabled
+        if self.config.enable_hrm_shadow:
+            self._run_synthetic_validation()
+
+    def _run_synthetic_validation(self) -> None:
+        """Run strict synthetic validation and baseline benchmarking for HRM."""
+        if not self.shadow_engine:
+            logger.debug("[SIMULATOR] Skipping synthetic validation: shadow engine not enabled")
+            return
+
+        from .synthetic_gates import CompetencyEvaluator, IdentityGate
+        import numpy as np
+
+        evaluator = CompetencyEvaluator()
+
+        def hrm_predictor_wrapper(x: np.ndarray) -> np.ndarray:
+            # Check if shadow_engine has a predictor or model
+            if self.shadow_engine and hasattr(self.shadow_engine, "_hrm_model") and self.shadow_engine._hrm_model:
+                try:
+                    # In a real scenario, this would involve feature engineering
+                    # For synthetic gates, we assume the model takes raw inputs
+                    return self.shadow_engine._hrm_model(x)
+                except Exception as e:
+                    logger.debug(f"[SIMULATOR] Synthetic validation: Model prediction failed: {e}")
+            
+            # Fallback to zeros (will fail identity gate)
+            return np.zeros_like(x)
+
+        logger.info("[SIMULATOR] Running HRM synthetic competency validation...")
+        results = evaluator.run_all(hrm_predictor_wrapper)
+        
+        identity_result = next((r for r in results if r.gate_name == "identity"), None)
+        
+        if identity_result:
+            if not identity_result.success:
+                logger.critical("CRITICAL: HRM failed IdentityGate convergence")
+            
+            mae = identity_result.mae
+            mae_pers = identity_result.metadata.get("mae_pers", float('inf'))
+            
+            if mae > mae_pers:
+                logger.critical("CRITICAL: HRM failed to beat PersistenceBaseline on IdentityGate")
+                self._synthetic_milestone_passed = False
+            elif identity_result.success:
+                self._synthetic_milestone_passed = True
+            else:
+                self._synthetic_milestone_passed = False
+
+            if not self._synthetic_milestone_passed:
+                logger.warning("[SIMULATOR] Model promotion blocked: failed synthetic validation")
+            else:
+                logger.info("[SIMULATOR] Synthetic milestone passed")
+        else:
+            logger.error("[SIMULATOR] IdentityGate result not found")
+            self._synthetic_milestone_passed = False
 
     def _verify_safety(self):
         """Verify safety constraints are enforced."""
@@ -155,40 +222,107 @@ class CoinbaseTradingSimulator:
         logger.info("[SAFETY] ✓ All safety checks passed - READ-ONLY mode confirmed")
 
     def _detect_regime(self, candle: Candle) -> str:
-        """Detect current market regime for a candle. (Placeholder)"""
-        # In a real implementation, this would use indicators or a model.
-        # For now, we'll return VOL_NORMAL as a default.
-        return "VOL_NORMAL"
+        """
+        Detect current market regime for a candle using rolling volatility.
+        
+        Uses standard deviation of log returns over a rolling window.
+        Maps volatility to 'VOL_LOW', 'VOL_HIGH', or 'VOL_NORMAL'.
+        """
+        symbol = candle.symbol
+        if symbol not in self._price_history:
+            self._price_history[symbol] = []
+        
+        self._price_history[symbol].append(float(candle.close))
+        
+        # Keep window + 1 prices to compute 'window' returns
+        if len(self._price_history[symbol]) > self._volatility_window + 1:
+            self._price_history[symbol].pop(0)
+            
+        if len(self._price_history[symbol]) <= self._volatility_window:
+            return "VOL_NORMAL"
+            
+        prices = np.array(self._price_history[symbol])
+        # Compute log returns: ln(P_t / P_{t-1})
+        log_returns = np.diff(np.log(prices))
+        volatility = np.std(log_returns)
+        
+        # Fixed thresholds for regime detection (approximate for 1m-5m crypto)
+        # VOL_LOW: < 0.05th percentile (~0.0005)
+        # VOL_HIGH: > 0.95th percentile (~0.002)
+        if volatility < 0.0005:
+            return "VOL_LOW"
+        elif volatility > 0.002:
+            return "VOL_HIGH"
+        else:
+            return "VOL_NORMAL"
 
     def _monitor_drift(self, candle: Candle, shadow_signal: Any) -> None:
         """Monitor for calibration drift in HRM predictions."""
         if not self.drift_monitor or not hasattr(shadow_signal, "hrm_confidence"):
             return
 
-        # We need a distribution of recent confidences to detect drift.
-        # For now, we'll just log the confidence.
-        # In a real implementation, we'd collect a window of confidences.
-        pass
+        self._recent_confidences.append(shadow_signal.hrm_confidence)
+        if len(self._recent_confidences) > self._max_confidence_window:
+            self._recent_confidences = self._recent_confidences[-self._max_confidence_window:]
+
+        # Detect drift periodically (every 100 candles) if enough samples
+        if self.state.candles_processed > 0 and self.state.candles_processed % 100 == 0:
+            if len(self._recent_confidences) >= 100:
+                self._last_drift_alert = self.drift_monitor.detect_drift(
+                    np.array(self._recent_confidences),
+                    current_ece=0.0  # Mock current_ece for now
+                )
+
+    def _compute_recent_performance(self) -> float:
+        """Calculate the win rate of the last 20 shadow trades from HRMShadowEngine."""
+        if not self.shadow_engine:
+            return 1.0
+
+        trades = self.shadow_engine.shadow_trades
+        if not trades:
+            return 1.0
+
+        recent_trades = trades[-20:]
+        wins = sum(1 for t in recent_trades if t.net_pnl > 0)
+        return wins / len(recent_trades)
 
     def _check_recalibration(self, candle: Candle) -> None:
         """Check if recalibration is needed based on governor triggers."""
         if not self.calibration_governor:
             return
 
-        # Check for triggers
+        # 1. Compute recent performance
+        perf = self._compute_recent_performance()
+        performance_drop = perf < 0.45  # Recalibrate if win rate drops below 45%
+
+        # 2. Check for drift
+        drift_detected = (
+            self._last_drift_alert is not None and
+            self._last_drift_alert.level in {DriftLevel.HIGH, DriftLevel.CRITICAL}
+        )
+
+        # 3. Consult governor
         decision = self.calibration_governor.should_recalibrate(
             current_time=candle.timestamp,
-            performance_drop=False, # Placeholder
-            drift_detected=False,   # Placeholder
+            performance_drop=performance_drop,
+            drift_detected=drift_detected,
             force_recalibrate=False
         )
 
         from .calibration_governor import CalibrationOutcome
         if decision.decision == CalibrationOutcome.CALIBRATE:
-            logger.info(f"[CALIBRATION] Recalibration triggered: {decision.reason}")
-            # Record that calibration was performed so subsequent polls
-            # don't keep returning CALIBRATE (bounded runtime behavior)
+            logger.info(f"[CALIBRATION] Recalibration triggered: {decision.reason} (Perf: {perf:.2f}, Drift: {drift_detected})")
+            
+            # Record that calibration was performed
             self.calibration_governor.record_calibration(candle.timestamp)
+            
+            # Reset drift alert after triggering
+            self._last_drift_alert = None
+            
+            # Run synthetic validation as a post-calibration competency check
+            if self.config.enable_hrm_shadow:
+                self._run_synthetic_validation()
+            
             # In a real implementation, this would trigger a background task
             # to run the calibration sweep and update models.
 
@@ -224,7 +358,7 @@ class CoinbaseTradingSimulator:
             thresholds = self.threshold_scheduler.get_thresholds([regime])
             
             # 3. Check for cooldown or kill-switch
-            if self.cooldown_manager.is_in_cooldown(candle.symbol, candle.timestamp):
+            if self.cooldown_manager.is_in_cooldown(candle.symbol, candle.timestamp, regime=regime):
                 logger.debug(f"[SIMULATOR] {candle.symbol} in cooldown, skipping signals")
                 self.paper_engine.update_open_positions(candle)
                 signals = []

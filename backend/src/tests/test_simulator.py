@@ -6,15 +6,15 @@ Tests for safety enforcement, reproducibility, and functionality.
 import pytest
 from datetime import datetime, timedelta, timezone
 from typing import List
-from src.models import Candle, Signal, SignalType, Timeframe
-from src.coinbase_client import CoinbaseMarketDataClient, SafetyEnforcement
-from src.strategies import (
+from backend.src.models import Candle, Signal, SignalType, Timeframe
+from backend.src.coinbase_client import CoinbaseMarketDataClient, SafetyEnforcement
+from backend.src.strategies import (
     create_all_strategies, MACrossoverStrategy, RSIMeanReversionStrategy,
     StrategyConfig, STRATEGY_REGISTRY
 )
-from src.paper_trading import PaperTradingEngine, PaperTradingConfig
-from src.backtesting import BacktestEngine, BacktestConfig, MetricsCalculator
-from src.bullpen import BullpenAggregator, RankingMetric
+from backend.src.paper_trading import PaperTradingEngine, PaperTradingConfig
+from backend.src.backtesting import BacktestEngine, BacktestConfig, MetricsCalculator
+from backend.src.bullpen import BullpenAggregator, RankingMetric
 
 
 def generate_test_candles(count: int = 300, symbol: str = "BTC-USD") -> List[Candle]:
@@ -339,7 +339,7 @@ class TestDataIngestion:
 
     def test_candle_buffer(self):
         """Test candle buffer deduplication."""
-        from src.data_ingestion import CandleBuffer
+        from backend.src.data_ingestion import CandleBuffer
 
         buffer = CandleBuffer(max_size=100)
         candles = generate_test_candles(50)
@@ -352,7 +352,7 @@ class TestDataIngestion:
 
     def test_candle_buffer_retrieval(self):
         """Test candle retrieval from buffer."""
-        from src.data_ingestion import CandleBuffer
+        from backend.src.data_ingestion import CandleBuffer
 
         buffer = CandleBuffer()
         candles = generate_test_candles(100)
@@ -369,8 +369,8 @@ class TestRealTimeSignals:
 
     def test_signal_emission(self):
         """Test signals are emitted correctly."""
-        from src.paper_trading import SignalEmitter
-        from src.models import Signal, SignalType, Timeframe
+        from backend.src.paper_trading import SignalEmitter
+        from backend.src.models import Signal, SignalType, Timeframe
 
         emitter = SignalEmitter()
         received_signals = []

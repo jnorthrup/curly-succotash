@@ -4,6 +4,7 @@ moneyfan = "/Users/jim/work/moneyfan"
 freqtrade = "/Users/jim/work/freqtrade"
 trikeshed = "/Users/jim/work/trikeshed"
 ane = "/Users/jim/work/ANE"
+autoresearch = "/Users/jim/work/autoresearch"
 
 [binance_vision]
 base_url = "https://data.binance.vision/data/spot/monthly/klines"

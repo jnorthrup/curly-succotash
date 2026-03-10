@@ -175,6 +175,190 @@ def build_hrm_readiness_contract() -> Dict[str, Any]:
     }
 
 
+def build_adaptation_run_setup(
+    runtime_dir: Path,
+    results_log_name: str,
+    branch_example: str,
+) -> Dict[str, Any]:
+    return {
+        "branch_naming_policy": {
+            "pattern": "exp/{stage}/{theme}/{YYYYMMDD}",
+            "example": branch_example,
+            "rule": "branch name encodes source stage, mutation theme, and creation date",
+        },
+        "results_log_path": str(runtime_dir / results_log_name),
+        "results_log_schema": {
+            "format": "jsonl",
+            "fields": {
+                "experiment_id": "string: unique identifier for the experiment run",
+                "branch": "string: git branch name",
+                "stage": "string: HRM stage being adapted (e.g., convergence_4x4)",
+                "theme": "string: mutation theme or readiness gap addressed",
+                "timestamp": "string: ISO8601 completion time",
+                "metrics": {
+                    "validation_loss": "float: final validation loss",
+                    "synthetic_milestone_results": "object: per-task outcomes",
+                },
+                "verdict": "string: promote|rollback|inconclusive",
+                "evidence_path": "string: path to detailed metrics artifact",
+            },
+        },
+        "baseline_recording_policy": {
+            "record_baseline_on": "each successful stage completion in HRM harness",
+            "baseline_artifacts": [
+                "validation_loss_curve.json",
+                "synthetic_milestone_evidence.json",
+                "stage_completion_certificate.json",
+            ],
+            "baseline_comparison_rule": (
+                "autoresearch experiments must beat or match baseline validation loss "
+                "without violating readiness gates"
+            ),
+        },
+        "loop_commit_rollback_policy": {
+            "commit_condition": (
+                "experiment verdict is 'promote' AND baseline comparison passes "
+                "AND readiness gates remain satisfied"
+            ),
+            "rollback_condition": (
+                "experiment verdict is 'rollback' OR validation loss degrades "
+                "OR readiness gate violation detected"
+            ),
+            "commit_action": "merge branch to main, update harness baseline reference",
+            "rollback_action": "abandon branch, log failure evidence, preserve for postmortem",
+            "inconclusive_action": (
+                "preserve branch for manual review, extend experiment budget if theme is high-priority"
+            ),
+        },
+    }
+
+
+def build_first_handoff(
+    source_stage: str,
+    goal: str,
+    success_signal: str,
+) -> Dict[str, Any]:
+    return {
+        "source_stage": source_stage,
+        "goal": goal,
+        "success_signal": success_signal,
+        "first_gate_set": ["M0_identity", "M1_sine"],
+    }
+
+
+def build_autoresearch_adaptation_contract(
+    autoresearch_repo: Path,
+    harness_json_path: Path,
+    harness_codex_path: Path,
+    swimlane_dsel_path: Path,
+) -> Dict[str, Any]:
+    runtime_dir = harness_json_path.parent
+    return {
+        "status": "ready_when_harness_exists",
+        "objective": "adapt HRM training evidence into bounded autoresearch experiments",
+        "activation_gate": (
+            "only begin once the staged HRM harness, codex, and swimlane artifacts exist"
+        ),
+        "repo_path": str(autoresearch_repo),
+        "program_path": str(autoresearch_repo / "program.md"),
+        "train_entrypoint": str(autoresearch_repo / "train.py"),
+        "prepare_entrypoint": str(autoresearch_repo / "prepare.py"),
+        "harness_inputs": {
+            "hrm_training_harness_json": str(harness_json_path),
+            "hrm_training_codex_md": str(harness_codex_path),
+            "hrm_swimlane_dsel": str(swimlane_dsel_path),
+        },
+        "bounded_mutation_policy": {
+            "mutable_surfaces": ["program.md", "train.py"],
+            "fixed_surface": ["prepare.py"],
+            "mutation_rule": (
+                "turn each HRM stage or readiness gap into one bounded experiment at a time"
+            ),
+        },
+        "experiment_focus": [
+            "cheap synthetic convergence before market-facing claims",
+            "readiness failures map to explicit experiment themes",
+            "preserve HRM promotion gates and shadow-first posture",
+        ],
+        "first_handoff": build_first_handoff(
+            source_stage="convergence_4x4",
+            goal="use the smallest harness stage as the baseline adaptation target",
+            success_signal="candidate experiments reduce validation loss without violating readiness gates",
+        ),
+        "run_setup": build_adaptation_run_setup(
+            runtime_dir=runtime_dir,
+            results_log_name="autoresearch_results.jsonl",
+            branch_example="exp/convergence_4x4/sine_wider/20260308",
+        ),
+    }
+
+
+def build_kotlin_autoresearch_adaptation_contract(
+    trikeshed_repo: Path,
+    harness_json_path: Path,
+    harness_codex_path: Path,
+    swimlane_dsel_path: Path,
+) -> Dict[str, Any]:
+    runtime_dir = harness_json_path.parent
+    mutable_surface = (
+        trikeshed_repo
+        / "src"
+        / "posixMain"
+        / "kotlin"
+        / "borg"
+        / "trikeshed"
+        / "autoresearch"
+        / "MutableAutoresearchExperiment.kt"
+    )
+    return {
+        "status": "ready_when_harness_exists",
+        "objective": "adapt HRM training evidence into a native-first Kotlin autoresearch harness",
+        "activation_gate": (
+            "only begin once the staged HRM harness, codex, and swimlane artifacts exist"
+        ),
+        "runtime_route": "kilo",
+        "repo_path": str(trikeshed_repo),
+        "mutable_training_surface": str(mutable_surface),
+        "native_entrypoint": "borg.trikeshed.autoresearch.autoresearchNativeMain",
+        "jvm_scaffold_surface": (
+            "src/jvmTest/kotlin/borg/trikeshed/autoresearch"
+        ),
+        "harness_inputs": {
+            "hrm_training_harness_json": str(harness_json_path),
+            "hrm_training_codex_md": str(harness_codex_path),
+            "hrm_swimlane_dsel": str(swimlane_dsel_path),
+        },
+        "bounded_mutation_policy": {
+            "mutable_surfaces": [
+                "src/posixMain/kotlin/borg/trikeshed/autoresearch/MutableAutoresearchExperiment.kt"
+            ],
+            "fixed_surface": [
+                "src/commonMain/kotlin/borg/trikeshed/autoresearch",
+                "src/posixMain/kotlin/borg/trikeshed/autoresearch/AutoresearchNativeMain.kt",
+            ],
+            "mutation_rule": (
+                "treat the native experiment surface as the Kotlin analogue of train.py; keep contracts, "
+                "logging, and task loaders fixed"
+            ),
+        },
+        "experiment_focus": [
+            "native-first synthetic convergence before market-facing claims",
+            "M0_identity and M1_sine are the first gate set for the convergence_4x4 handoff",
+            "preserve JVM parity scaffolding until native compilation and smoke are routine",
+        ],
+        "first_handoff": build_first_handoff(
+            source_stage="convergence_4x4",
+            goal="use the smallest harness stage as the native-first Kotlin baseline adaptation target",
+            success_signal="native synthetic experiments clear identity and sine gates while preserving the shared JSONL artifact contract",
+        ),
+        "run_setup": build_adaptation_run_setup(
+            runtime_dir=runtime_dir,
+            results_log_name="kotlin_autoresearch_results.jsonl",
+            branch_example="exp/convergence_4x4/native_identity/20260310",
+        ),
+    }
+
+
 @dataclass
 class TaskSpec:
     name: str
@@ -996,7 +1180,6 @@ class WorkspaceCoordinator:
             print(f"  - {task.name} [{kind}] {task.command}")
         if not python_tasks:
             print("  - none")
-
         return 0
 
     @staticmethod
@@ -1399,8 +1582,30 @@ class WorkspaceCoordinator:
             ]
 
         moneyfan = self.workspace_paths.get("moneyfan", Path("/missing/moneyfan"))
+        autoresearch = self.workspace_paths.get(
+            "autoresearch",
+            SCRIPT_DIR.parent.parent / "autoresearch",
+        )
+        trikeshed = Path("/Users/jim/work/TrikeShed")
+        if not trikeshed.exists():
+            trikeshed = self.workspace_paths.get(
+                "trikeshed",
+                SCRIPT_DIR.parent.parent / "TrikeShed",
+            )
         operating_posture = build_operating_posture()
         readiness_contract = build_hrm_readiness_contract()
+        autoresearch_contract = build_autoresearch_adaptation_contract(
+            autoresearch_repo=autoresearch,
+            harness_json_path=out_json,
+            harness_codex_path=out_codex,
+            swimlane_dsel_path=swimlane_dsel,
+        )
+        kotlin_autoresearch_contract = build_kotlin_autoresearch_adaptation_contract(
+            trikeshed_repo=trikeshed,
+            harness_json_path=out_json,
+            harness_codex_path=out_codex,
+            swimlane_dsel_path=swimlane_dsel,
+        )
         stages_out: List[Dict[str, Any]] = []
         shell_lines = [
             "#!/usr/bin/env bash",
@@ -1489,6 +1694,8 @@ class WorkspaceCoordinator:
             "swimlane_dsel_path": str(swimlane_dsel),
             "operating_posture": operating_posture,
             "readiness_contract": readiness_contract,
+            "autoresearch_adaptation": autoresearch_contract,
+            "kotlin_autoresearch_adaptation": kotlin_autoresearch_contract,
             "stages": stages_out,
         }
 
@@ -1513,6 +1720,140 @@ class WorkspaceCoordinator:
             "",
             "### HRM Promotion Requirements",
             *(f"- {rule}" for rule in operating_posture["hrm_role"]["promotion_requirements"]),
+            "",
+            "## Autoresearch Adaptation",
+            "",
+            f"- status: {autoresearch_contract['status']}",
+            f"- objective: {autoresearch_contract['objective']}",
+            f"- activation_gate: {autoresearch_contract['activation_gate']}",
+            f"- repo_path: {autoresearch_contract['repo_path']}",
+            f"- program_path: {autoresearch_contract['program_path']}",
+            f"- train_entrypoint: {autoresearch_contract['train_entrypoint']}",
+            "",
+            "### Autoresearch Harness Inputs",
+            *(
+                f"- {name}: {path}"
+                for name, path in autoresearch_contract["harness_inputs"].items()
+            ),
+            "",
+            "### Autoresearch Experiment Focus",
+            *(f"- {item}" for item in autoresearch_contract["experiment_focus"]),
+            "",
+            "### Autoresearch Run Setup",
+            "",
+            "#### Branch Naming Policy",
+            f"- pattern: `{autoresearch_contract['run_setup']['branch_naming_policy']['pattern']}`",
+            f"- example: `{autoresearch_contract['run_setup']['branch_naming_policy']['example']}`",
+            f"- rule: {autoresearch_contract['run_setup']['branch_naming_policy']['rule']}",
+            "",
+            "#### Results Log",
+            f"- path: `{autoresearch_contract['run_setup']['results_log_path']}`",
+            f"- format: {autoresearch_contract['run_setup']['results_log_schema']['format']}",
+            "",
+            "##### Results Log Schema",
+            *(
+                f"- {field}: {desc}"
+                for field, desc in autoresearch_contract["run_setup"]["results_log_schema"]["fields"].items()
+            ),
+            "",
+            "#### Baseline Recording Policy",
+            f"- record_baseline_on: {autoresearch_contract['run_setup']['baseline_recording_policy']['record_baseline_on']}",
+            "",
+            "##### Baseline Artifacts",
+            *(
+                f"- `{artifact}`"
+                for artifact in autoresearch_contract["run_setup"]["baseline_recording_policy"]["baseline_artifacts"]
+            ),
+            "",
+            f"- comparison_rule: {autoresearch_contract['run_setup']['baseline_recording_policy']['baseline_comparison_rule']}",
+            "",
+            "#### Loop Commit/Rollback Policy",
+            "",
+            "##### Commit Condition",
+            f"- {autoresearch_contract['run_setup']['loop_commit_rollback_policy']['commit_condition']}",
+            "",
+            "##### Rollback Condition",
+            f"- {autoresearch_contract['run_setup']['loop_commit_rollback_policy']['rollback_condition']}",
+            "",
+            "##### Actions",
+            f"- commit: {autoresearch_contract['run_setup']['loop_commit_rollback_policy']['commit_action']}",
+            f"- rollback: {autoresearch_contract['run_setup']['loop_commit_rollback_policy']['rollback_action']}",
+            f"- inconclusive: {autoresearch_contract['run_setup']['loop_commit_rollback_policy']['inconclusive_action']}",
+            "",
+            "#### First Handoff",
+            f"- source_stage: {autoresearch_contract['first_handoff']['source_stage']}",
+            f"- goal: {autoresearch_contract['first_handoff']['goal']}",
+            f"- success_signal: {autoresearch_contract['first_handoff']['success_signal']}",
+            "##### First Gate Set",
+            *(f"- {gate}" for gate in autoresearch_contract["first_handoff"]["first_gate_set"]),
+            "",
+            "## Kotlin Autoresearch Adaptation",
+            "",
+            f"- status: {kotlin_autoresearch_contract['status']}",
+            f"- objective: {kotlin_autoresearch_contract['objective']}",
+            f"- activation_gate: {kotlin_autoresearch_contract['activation_gate']}",
+            f"- runtime_route: {kotlin_autoresearch_contract['runtime_route']}",
+            f"- repo_path: {kotlin_autoresearch_contract['repo_path']}",
+            f"- mutable_training_surface: {kotlin_autoresearch_contract['mutable_training_surface']}",
+            f"- native_entrypoint: {kotlin_autoresearch_contract['native_entrypoint']}",
+            f"- jvm_scaffold_surface: {kotlin_autoresearch_contract['jvm_scaffold_surface']}",
+            "",
+            "### Kotlin Harness Inputs",
+            *(
+                f"- {name}: {path}"
+                for name, path in kotlin_autoresearch_contract["harness_inputs"].items()
+            ),
+            "",
+            "### Kotlin Experiment Focus",
+            *(f"- {item}" for item in kotlin_autoresearch_contract["experiment_focus"]),
+            "",
+            "### Kotlin Run Setup",
+            "",
+            "#### Branch Naming Policy",
+            f"- pattern: `{kotlin_autoresearch_contract['run_setup']['branch_naming_policy']['pattern']}`",
+            f"- example: `{kotlin_autoresearch_contract['run_setup']['branch_naming_policy']['example']}`",
+            f"- rule: {kotlin_autoresearch_contract['run_setup']['branch_naming_policy']['rule']}",
+            "",
+            "#### Results Log",
+            f"- path: `{kotlin_autoresearch_contract['run_setup']['results_log_path']}`",
+            f"- format: {kotlin_autoresearch_contract['run_setup']['results_log_schema']['format']}",
+            "",
+            "##### Results Log Schema",
+            *(
+                f"- {field}: {desc}"
+                for field, desc in kotlin_autoresearch_contract["run_setup"]["results_log_schema"]["fields"].items()
+            ),
+            "",
+            "#### Baseline Recording Policy",
+            f"- record_baseline_on: {kotlin_autoresearch_contract['run_setup']['baseline_recording_policy']['record_baseline_on']}",
+            "",
+            "##### Baseline Artifacts",
+            *(
+                f"- `{artifact}`"
+                for artifact in kotlin_autoresearch_contract["run_setup"]["baseline_recording_policy"]["baseline_artifacts"]
+            ),
+            "",
+            f"- comparison_rule: {kotlin_autoresearch_contract['run_setup']['baseline_recording_policy']['baseline_comparison_rule']}",
+            "",
+            "#### Loop Commit/Rollback Policy",
+            "",
+            "##### Commit Condition",
+            f"- {kotlin_autoresearch_contract['run_setup']['loop_commit_rollback_policy']['commit_condition']}",
+            "",
+            "##### Rollback Condition",
+            f"- {kotlin_autoresearch_contract['run_setup']['loop_commit_rollback_policy']['rollback_condition']}",
+            "",
+            "##### Actions",
+            f"- commit: {kotlin_autoresearch_contract['run_setup']['loop_commit_rollback_policy']['commit_action']}",
+            f"- rollback: {kotlin_autoresearch_contract['run_setup']['loop_commit_rollback_policy']['rollback_action']}",
+            f"- inconclusive: {kotlin_autoresearch_contract['run_setup']['loop_commit_rollback_policy']['inconclusive_action']}",
+            "",
+            "#### First Handoff",
+            f"- source_stage: {kotlin_autoresearch_contract['first_handoff']['source_stage']}",
+            f"- goal: {kotlin_autoresearch_contract['first_handoff']['goal']}",
+            f"- success_signal: {kotlin_autoresearch_contract['first_handoff']['success_signal']}",
+            "##### First Gate Set",
+            *(f"- {gate}" for gate in kotlin_autoresearch_contract["first_handoff"]["first_gate_set"]),
             "",
             "## Readiness Contract",
             "",

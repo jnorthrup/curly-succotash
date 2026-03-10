@@ -1,0 +1,35 @@
+---
+
+## Slice Complete: ANE Handoff Contract Published
+
+### Changed Files
+| File | Change |
+|------|--------|
+| `conductor/tracks/ane_autoresearch_24_lane_harness_20260308/spec.md` | Added **ANE Handoff Contract** section with 4 subsections |
+| `conductor/tracks/ane_autoresearch_24_lane_harness_20260308/plan.md` | Marked Phase 2 items 1 & 3 complete |
+
+### Verification Commands Executed
+```bash
+rg -n "ANE Handoff Contract|Harness Inputs Required|Expected ANE Artifact Outputs|Readiness Gates|Evidence Required for Scale-Up" conductor/tracks/ane_autoresearch_24_lane_harness_20260308/spec.md
+sed -n '25,95p' conductor/tracks/ane_autoresearch_24_lane_harness_20260308/spec.md
+rg -n "24-lane harness|Priority order" conductor/tracks.md conductor/tracks/ane_autoresearch_24_lane_harness_20260308/spec.md conductor/tracks/ane_autoresearch_24_lane_harness_20260308/plan.md
+```
+
+### Actual Result
+- **6 harness inputs** named with paths and purposes
+- **5 ANE artifact outputs** defined with schemas
+- **4 readiness gates** specified with numeric thresholds
+- **Scale-up evidence requirements** documented for:
+  - >24 agents (64/512-lane claims): 5 evidence items
+  - Full-width 24-pair coverage: 5 evidence items
+- **Ownership boundaries** explicit: `coordination/` → harness, `../ANE` → parity/certs, `../autoresearch` → experiments
+
+### Evidence/Artifact Paths Inspected
+- `/Users/jim/work/curly-succotash/conductor/tracks/ane_autoresearch_24_lane_harness_20260308/spec.md` (lines 21-95)
+- `/Users/jim/work/curly-succotash/conductor/tracks/ane_autoresearch_24_lane_harness_20260308/plan.md` (lines 1-29)
+- `/Users/jim/work/curly-succotash/conductor/tracks.md` (line 55)
+- `/Users/jim/work/curly-succotash/coordination/runtime/hrm_training_harness.json` (referenced contract)
+- `/Users/jim/work/curly-succotash/coordination/config.toml` (swimlane_contract)
+
+### Remaining Blocker
+**Cross-repo ANE execution** — sibling `../ANE` lacks repo-local conductor truth (`conductor/tracks.md` or `conductor/tracks/`). This is a known blocker recorded in plan.md; the local handoff contract is now published and ready for ANE-side adoption.

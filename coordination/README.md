@@ -92,9 +92,47 @@ python3 coordination/coordinate.py begin-today --execute --skip-harness
 - Connectome/harness artifacts:
   - `/Users/jim/work/curly-succotash/coordination/runtime/binance_connectome_universe.json`
   - `/Users/jim/work/curly-succotash/coordination/runtime/binance_connectome_symbols.txt`
-  - `/Users/jim/work/curly-succotash/coordination/runtime/hrm_training_harness.json`
-  - `/Users/jim/work/curly-succotash/coordination/runtime/hrm_training_codex.md`
+  - `/Users/jim/work/curly-succotash/coordination/runtime/hrm_training_harness.json` (includes `autoresearch_adaptation` handoff contract)
+  - `/Users/jim/work/curly-succotash/coordination/runtime/hrm_training_codex.md` (includes the same handoff summary for `../autoresearch`)
   - `/Users/jim/work/curly-succotash/coordination/runtime/run_hrm_harness.sh`
+
+## Autoresearch Adaptation Contract
+
+The `emit-harness` command generates an autoresearch adaptation contract that includes:
+
+### Branch Naming Policy
+- **Pattern**: `exp/{stage}/{theme}/{YYYYMMDD}`
+- **Example**: `exp/convergence_4x4/sine_wider/20260308`
+- **Rule**: Branch name encodes source stage, mutation theme, and creation date
+
+### Results Log
+- **Path**: `<runtime_dir>/autoresearch_results.jsonl`
+- **Format**: JSONL (one JSON object per line)
+- **Schema Fields**:
+  - `experiment_id`: unique identifier for the experiment run
+  - `branch`: git branch name
+  - `stage`: HRM stage being adapted (e.g., convergence_4x4)
+  - `theme`: mutation theme or readiness gap addressed
+  - `timestamp`: ISO8601 completion time
+  - `metrics`: validation_loss, synthetic_milestone_results
+  - `verdict`: promote|rollback|inconclusive
+  - `evidence_path`: path to detailed metrics artifact
+
+### Baseline Recording Policy
+- **Trigger**: each successful stage completion in HRM harness
+- **Baseline Artifacts**:
+  - `validation_loss_curve.json`
+  - `synthetic_milestone_evidence.json`
+  - `stage_completion_certificate.json`
+- **Comparison Rule**: autoresearch experiments must beat or match baseline validation loss without violating readiness gates
+
+### Loop Commit/Rollback Policy
+- **Commit Condition**: verdict is 'promote' AND baseline comparison passes AND readiness gates remain satisfied
+- **Rollback Condition**: verdict is 'rollback' OR validation loss degrades OR readiness gate violation detected
+- **Actions**:
+  - **commit**: merge branch to main, update harness baseline reference
+  - **rollback**: abandon branch, log failure evidence, preserve for postmortem
+  - **inconclusive**: preserve branch for manual review, extend experiment budget if theme is high-priority
 
 ## Kotlingrad-Cursor Nexus
 

@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-03-07T14:03:46",
+  "execute": false,
+  "cycles": 1,
+  "sleep_seconds": 60,
+  "workspaces": [
+    "curly_succotash"
+  ],
+  "agents": [
+    "gemini"
+  ],
+  "session_dir": "/Users/jim/work/curly-succotash/coordination/runtime/agent-swarm-20260307-140346"
+}
